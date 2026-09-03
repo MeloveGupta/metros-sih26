@@ -140,8 +140,10 @@ Rule 7 compliance is a **two-measurement geometry problem**, both from one scale
 **Rule 7 — size & placement:** letter height (mm) vs. area band, 1 mm floor,
 width ratio, principal-display-panel placement.
 
-**Platform features:** image upload + in-field capture, compliance/non-compliance
-reports (PDF + DOCX) with evidence photos, searchable product/inspection
+**Platform features:** image upload + in-field capture, **detailed** compliance
+reports (JSON + PDF + DOCX) with per-declaration findings, mm ± uncertainty,
+evidence crops, chain of custody and clause citations — full structure in
+[`docs/report-spec.md`](report-spec.md) — searchable product/inspection
 repository, role-based access (officer/admin/auditor), enforcement dashboard,
 immutable audit log.
 
