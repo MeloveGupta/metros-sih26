@@ -31,7 +31,12 @@ from .schemas.report import (
     RuleCatalogInfo,
     Status,
 )
-from .vision.measure import glyph_height_mm, glyph_width_ratio, panel_area_cm2
+from .vision.measure import (
+    MmMeasurement,
+    glyph_height_mm,
+    glyph_width_ratio,
+    panel_area_cm2,
+)
 from .vision.ocr import OcrResult, Token
 from .vision.scale import CalibrationResult, detect_scale
 
@@ -75,6 +80,7 @@ def _build_font_inputs(
     fields: List[FieldExtraction],
     panel_polygon_px: Optional[Sequence[Tuple[float, float]]],
     molded: bool,
+    panel_area_cm2_known: Optional[float] = None,
 ):
     """Measure panel area and per-declaration glyph heights when calibrated."""
     if not cal.calibrated:
@@ -87,6 +93,10 @@ def _build_font_inputs(
     if panel_polygon_px is not None:
         area = panel_area_cm2(cal.H_img_to_mm, panel_polygon_px, cal.marker_mm,
                               mean_side, cal.residual_px)
+    elif panel_area_cm2_known is not None:
+        # Officer-supplied panel area; carry a nominal 2% uncertainty.
+        area = MmMeasurement(round(panel_area_cm2_known, 3),
+                             round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
 
     items: List[GlyphInput] = []
     for f in fields:
@@ -133,6 +143,7 @@ def run_scan(
     product: Optional[Product] = None,
     inspection: Optional[Inspection] = None,
     panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None,
+    panel_area_cm2: Optional[float] = None,
     molded: bool = False,
     image_file: str = "upload.jpg",
     captured_at: Optional[datetime] = None,
@@ -154,7 +165,8 @@ def run_scan(
     _attach_bboxes(fields, ocr.tokens)
 
     # 3. Metric font inputs.
-    font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded)
+    font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
+                                     panel_area_cm2_known=panel_area_cm2)
 
     # 4. Deterministic evaluation.
     declarations, font_analysis, summary = evaluate(
