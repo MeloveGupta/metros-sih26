@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# ML / model weights
+*.onnx
+*.pt
+*.pth
+paddle_models/
+
+# Data / media
+data/
+uploads/
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+!frontend/**/*.png
+
+# Reports output
+out/
+*.pdf
+*.docx
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# DB / infra
+*.sqlite3
+pgdata/
+minio-data/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

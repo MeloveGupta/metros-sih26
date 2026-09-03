@@ -1,0 +1,58 @@
+# Legal Metrology (Packaged Commodities) Rules, 2011 — rule catalog.
+# Data, not code: an officer amends thresholds here without a redeploy.
+# Each declaration maps to a clause; the engine cites `clause` in every verdict.
+# NOTE: clause numbers + mm thresholds must be validated against the official
+# text at https://consumeraffairs.gov.in/pages/legal-metrology-act before use.
+
+version: 2011.1
+
+declarations:
+  - id: manufacturer
+    label: Name & address of manufacturer/packer/importer
+    clause: "Rule 6(1)(a)"
+    checks: [present, address_format]
+
+  - id: common_name
+    label: Common or generic name of commodity
+    clause: "Rule 6(1)(b)"
+    checks: [present]
+
+  - id: net_quantity
+    label: Net quantity in standard unit
+    clause: "Rule 6(1)(d)"
+    checks: [present, unit_standard]
+
+  - id: mrp
+    label: Retail sale price (MRP, inclusive of all taxes)
+    clause: "Rule 6(1)(e)"
+    checks: [present, mrp_format]
+
+  - id: mfg_date
+    label: Month & year of manufacture/packing/import
+    clause: "Rule 6(1)(f)"
+    checks: [present, date_format]
+
+  - id: consumer_care
+    label: Consumer-care details (name, phone/email)
+    clause: "Rule 6(1)(g)"
+    checks: [present, contact_format]
+
+  - id: country_of_origin
+    label: Country of origin (imported commodities)
+    clause: "Rule 6(1)(h)"
+    checks: [present_if_imported]
+
+# Rule 7 — minimum letter height, measured in millimetres from the image.
+# Thresholds scale with net quantity / principal-display-panel area.
+font_height_mm:
+  clause: "Rule 7"
+  # net-quantity band  ->  minimum letter height (mm)
+  bands:
+    - max_net_quantity_g: 50
+      min_height_mm: 1.0
+    - max_net_quantity_g: 200
+      min_height_mm: 2.0
+    - max_net_quantity_g: 500
+      min_height_mm: 4.0
+    - max_net_quantity_g: null   # above 500 g / 500 ml
+      min_height_mm: 6.0

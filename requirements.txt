@@ -1,0 +1,41 @@
+# --- API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+
+# --- Vision (the moat) ---
+opencv-contrib-python==4.10.0.84   # cv2.aruco lives in contrib
+numpy==2.2.1
+paddleocr==2.9.1
+paddlepaddle==2.6.2
+Pillow==11.1.0
+
+# --- Field extraction ---
+spacy==3.8.3
+regex==2024.11.6
+
+# --- Rules ---
+PyYAML==6.0.2
+
+# --- Reports ---
+weasyprint==63.1
+python-docx==1.1.2
+Jinja2==3.1.5
+
+# --- DB ---
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+
+# --- Storage ---
+minio==7.2.13
+
+# --- Auth ---
+pyjwt==2.10.1
+passlib[bcrypt]==1.7.4
+
+# --- Dev / test ---
+pytest==8.3.4
+httpx==0.28.1
