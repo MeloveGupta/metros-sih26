@@ -79,14 +79,24 @@ The system should:
 
 ## The hard part — font height in millimetres
 
-Rule 7 compliance = letter height ≥ a threshold that scales with net quantity / package size. From an image:
+Rule 7 compliance = letter/numeral height ≥ a threshold set by the **area of the principal display panel (cm²)** — Table-I, as substituted by GSR 629(E) w.e.f. 01-01-2018. (The pre-2018 net-quantity bands are superseded.) From an image:
 
-1. Recover real-world scale — reference object of known size in frame, known package dimensions, or capture DPI.
-2. Detect glyph bounding boxes (character-level).
-3. Convert pixel glyph height → millimetres using the scale.
-4. Compare against the net-quantity-dependent threshold from the Rules.
+1. Recover real-world scale — ArUco marker of known size in frame (or known package dimension / capture DPI).
+2. Measure the **principal display panel area in cm²** using that scale → pick the Table-I band.
+3. Detect glyph bounding boxes (character-level), convert pixel height → mm.
+4. Compare glyph mm against the band's minimum (Rule 7(3) also sets an absolute 1 mm floor, 2 mm if molded; width ≥ ⅓ height).
 
-This is the differentiator. A generic OCR app cannot do it; modelling scale recovery + character-level measurement proves real rule comprehension.
+Table-I (current):
+
+| Panel area A (cm²) | Min height (mm) | Molded (mm) |
+|--------------------|-----------------|-------------|
+| A < 50             | 1.0             | 2.0         |
+| 50 ≤ A < 100       | 1.5             | 3.0         |
+| 100 ≤ A < 500      | 2.5             | 4.0         |
+| 500 ≤ A < 2500     | 4.0             | 6.0         |
+| A ≥ 2500           | 6.0             | 6.0         |
+
+This is the differentiator, and it is a **two-measurement** problem: panel area *and* glyph height, both from scale. A generic OCR app cannot do it; modelling scale recovery + area + character measurement proves real rule comprehension.
 
 ## Notes
 

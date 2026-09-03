@@ -1,58 +1,96 @@
 # Legal Metrology (Packaged Commodities) Rules, 2011 — rule catalog.
 # Data, not code: an officer amends thresholds here without a redeploy.
 # Each declaration maps to a clause; the engine cites `clause` in every verdict.
-# NOTE: clause numbers + mm thresholds must be validated against the official
-# text at https://consumeraffairs.gov.in/pages/legal-metrology-act before use.
+#
+# Source: official consolidated book (all amendments) — docs/lmpc-2011.pdf,
+# Dept of Consumer Affairs. Values below reflect amendments in force,
+# principally GSR 629(E) dated 23-06-2017 (w.e.f. 01-01-2018), which replaced
+# the net-quantity font bands with area-of-panel bands.
 
-version: 2011.1
+version: "2011 (as amended through 2022)"
 
+# --- Rule 6: declarations to be made on every package ---
 declarations:
   - id: manufacturer
-    label: Name & address of manufacturer/packer/importer
+    label: Name & address of manufacturer / packer / importer
     clause: "Rule 6(1)(a)"
     checks: [present, address_format]
 
+  - id: country_of_origin
+    label: Country of origin / manufacture / assembly (imported products)
+    clause: "Rule 6(1)(aa)"          # inserted GSR 629(E), w.e.f. 01-01-2018
+    checks: [present_if_imported]
+
   - id: common_name
-    label: Common or generic name of commodity
+    label: Common or generic name of the commodity
     clause: "Rule 6(1)(b)"
     checks: [present]
 
   - id: net_quantity
-    label: Net quantity in standard unit
-    clause: "Rule 6(1)(d)"
+    label: Net quantity in the standard unit of weight / measure / number
+    clause: "Rule 6(1)(c)"
     checks: [present, unit_standard]
 
+  - id: mfg_date
+    label: Month & year of manufacture / pre-packing
+    clause: "Rule 6(1)(d)"
+    checks: [present, month_year_format]
+
+  - id: best_before
+    label: Best before / use-by date (perishable commodities)
+    clause: "Rule 6(1)(da)"          # inserted GSR 629(E), w.e.f. 01-01-2018
+    checks: [present_if_perishable, month_year_format]
+
   - id: mrp
-    label: Retail sale price (MRP, inclusive of all taxes)
+    label: Retail sale price — MRP inclusive of all taxes, Indian currency
     clause: "Rule 6(1)(e)"
     checks: [present, mrp_format]
-
-  - id: mfg_date
-    label: Month & year of manufacture/packing/import
-    clause: "Rule 6(1)(f)"
-    checks: [present, date_format]
+    # Accepted formats (Rule 6 illustrations), rounded to nearest rupee / 50 paise:
+    #   "Maximum retail price Rs./₹ xx.xx (inclusive of all taxes)"
+    #   "Max. retail price Rs./₹ xx.xx inclusive of all taxes"
+    #   "MRP Rs./₹ xx.xx incl. of all taxes"
+    #   "MRP Rs./₹ xx.xx (incl. of all taxes)"
 
   - id: consumer_care
-    label: Consumer-care details (name, phone/email)
-    clause: "Rule 6(1)(g)"
+    label: Consumer-care — name, address, telephone, e-mail for complaints
+    clause: "Rule 6(2)"
     checks: [present, contact_format]
 
-  - id: country_of_origin
-    label: Country of origin (imported commodities)
-    clause: "Rule 6(1)(h)"
-    checks: [present_if_imported]
-
-# Rule 7 — minimum letter height, measured in millimetres from the image.
-# Thresholds scale with net quantity / principal-display-panel area.
+# --- Rule 7: principal display panel — letter/numeral height (in mm) ---
+# Height depends on the AREA of the principal display panel in cm^2
+# (Table-I as substituted by GSR 629(E), w.e.f. 01-01-2018), NOT on net weight.
+# The pipeline must therefore measure BOTH the panel area (cm^2) and the glyph
+# height (mm) from the image via the ArUco scale — see docs/architecture.md.
 font_height_mm:
-  clause: "Rule 7"
-  # net-quantity band  ->  minimum letter height (mm)
+  clause: "Rule 7(2), Table-I"
+  key: principal_display_panel_area_cm2
+  # area band (cm^2)  ->  minimum letter/numeral height (mm)
   bands:
-    - max_net_quantity_g: 50
+    - area_cm2_lt: 50
       min_height_mm: 1.0
-    - max_net_quantity_g: 200
-      min_height_mm: 2.0
-    - max_net_quantity_g: 500
+      min_height_mm_molded: 2.0      # blown/formed/molded on container
+    - area_cm2_lt: 100                # 50 <= A < 100
+      min_height_mm: 1.5
+      min_height_mm_molded: 3.0
+    - area_cm2_lt: 500                # 100 <= A < 500
+      min_height_mm: 2.5
+      min_height_mm_molded: 4.0
+    - area_cm2_lt: 2500               # 500 <= A < 2500
       min_height_mm: 4.0
-    - max_net_quantity_g: null   # above 500 g / 500 ml
+      min_height_mm_molded: 6.0
+    - area_cm2_lt: null               # A >= 2500
       min_height_mm: 6.0
+      min_height_mm_molded: 6.0
+
+# Rule 7(3): absolute floor + width ratio.
+font_absolute:
+  clause: "Rule 7(3)"
+  min_height_mm: 1.0                  # never below 1 mm (2 mm if molded)
+  min_height_mm_molded: 2.0
+  min_width_ratio: 0.3333            # width >= 1/3 height
+  width_ratio_exceptions: ["1", "i", "I", "l"]
+
+# Rule 7(1): tiny packages.
+small_package:
+  clause: "Rule 7(1)"
+  capacity_le_cc: 10                  # <= 10 cm^3: PDP may be an affixed card/tape

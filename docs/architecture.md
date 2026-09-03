@@ -70,6 +70,12 @@ pixels. No model recovers information the image does not contain. Rule 7
 therefore needs a physical reference (ArUco), and enforcement needs a
 reproducible number, which a language model cannot guarantee.
 
+Note (Rule 7, Table-I as amended by GSR 629(E), w.e.f. 01-01-2018): the letter
+height threshold is keyed to the **area of the principal display panel in cm²**,
+not net weight. The pipeline therefore makes *two* scale-derived measurements —
+panel area (cm²) to pick the band, and glyph height (mm) to check it. Real
+thresholds live in `rules/lmpc-2011.yaml`; full text in `docs/lmpc-2011.pdf`.
+
 **Why not Rust/Go for the core:** the OCR + OpenCV ecosystem is Python-first.
 Go/Rust bindings are immature and would cost build time for no scoring benefit.
 The vision core stays Python; a Rust (axum) or Go API gateway is a clean v2

@@ -27,6 +27,8 @@ uploads/
 out/
 *.pdf
 *.docx
+# keep the official LMPC 2011 rules reference in-repo
+!docs/*.pdf
 
 # Node / frontend
 node_modules/
