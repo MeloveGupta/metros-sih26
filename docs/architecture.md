@@ -91,6 +91,28 @@ Go/Rust bindings are immature and would cost build time for no scoring benefit.
 The vision core stays Python; a Rust (axum) or Go API gateway is a clean v2
 wrapper around the Python service if the project grows.
 
+## 3b. Scale reference — the calibration card
+
+The millimetre measurement needs a known-size object in the same plane as the
+declaration. The chosen reference is a **printed ArUco calibration card**, not
+any identity document.
+
+- **Size:** ID-1 / CR80, 85.60 × 53.98 mm (ISO/IEC 7810) — fits a wallet.
+- **Marker:** an ArUco tag of a fixed, printed side length (default 40 mm) →
+  the detector recovers all four corners to sub-pixel accuracy and yields
+  `mm_per_pixel`; a homography from the marker corners flattens perspective.
+- **Why not Aadhaar / any ID card:** an enforcement tool stores every capture as
+  evidence — embedding a national ID (photo + number, biometric-linked) in each
+  record is a DPDP Act 2023 / Aadhaar-handling liability for zero benefit. A
+  plain card also has no fiducial pattern, so its corners are fragile to detect
+  on a cluttered shelf. The ArUco card gives the same "lay it next to the
+  product" convenience with **no PII** and **robust auto-detection**.
+- **Distribution:** ship a free printable A4 sheet (`scripts/gen_calibration_card.py`).
+  An office prints once; officers carry the cut-out card. Zero cost, offline.
+- **Fallbacks (manual/low-confidence mode):** any blank ID-1 card by its known
+  outline, a ₹5 coin (⌀ 23 mm), or a ruler. **Never** barcode width — EAN-13
+  magnification varies. No reference in frame ⇒ no mm verdict.
+
 ## 4. Component responsibilities
 
 - **vision/** — scale recovery, OCR, glyph→mm measurement. The differentiator.
