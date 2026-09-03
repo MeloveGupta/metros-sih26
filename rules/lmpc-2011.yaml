@@ -9,6 +9,32 @@
 
 version: "2011 (as amended through 2022)"
 
+# Statutory authority cited in report headers.
+statute:
+  act: "Legal Metrology Act, 2009"
+  section: "Section 18"
+  effect: >
+    Prohibits manufacture, packing, import, sale, distribution, delivery or
+    display for sale of any pre-packaged commodity unless it bears the
+    prescribed declarations in the prescribed manner.
+  source_url: "https://consumeraffairs.nic.in/"
+
+# Every rule below is stored as versioned data (per legal-review guidance):
+# clause + authoritative source + gazette + effective-from + applicability.
+# ENGINE CONTRACT: detection is separate from legal conclusion. A field that is
+# "not detected in the submitted image" is NOT asserted "legally absent"; such
+# items carry a confidence and a mandatory officer_review flag. The system
+# reports POTENTIAL non-compliance for verification, never a final legal finding.
+meta:
+  source_url: "https://consumeraffairs.nic.in/"
+  reference_pdf: "docs/lmpc-2011.pdf"
+  verify_before_use:
+    - "https://iilm.gov.in/more/act-rules"
+    - "https://egazette.nic.in/"
+  privacy: "DPDP Act, 2023 governs personal/location/officer data."
+  disposition: potential_non_compliance   # never 'violation'
+  officer_review: required
+
 # --- Rule 6: declarations to be made on every package ---
 declarations:
   - id: manufacturer
@@ -63,7 +89,16 @@ declarations:
 # height (mm) from the image via the ArUco scale — see docs/architecture.md.
 font_height_mm:
   clause: "Rule 7(2), Table-I"
+  gazette: "GSR 629(E), 23-06-2017"
+  effective_from: "2018-01-01"
+  source_url: "https://consumeraffairs.nic.in/"
   key: principal_display_panel_area_cm2
+  # Measurement is calibrated-estimate decision-support, not physical measurement.
+  # Requires an in-plane known-size marker (ArUco/AprilTag) + perspective
+  # correction; report height as value ± uncertainty. Reject uncalibrated images
+  # (no marker => no verdict). Do NOT use barcode width as scale reference.
+  requires_calibration: true
+  report_uncertainty: true
   # area band (cm^2)  ->  minimum letter/numeral height (mm)
   bands:
     - area_cm2_lt: 50

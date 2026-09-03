@@ -10,16 +10,26 @@
 ## 1. Design principles
 
 1. **LLM extracts, code decides.** Vision/NLP turns pixels into structured
-   fields; a deterministic rule engine produces the pass/fail verdict. Verdicts
-   are reproducible and cite the exact rule clause.
-2. **Offline-first.** The full pipeline runs on-device with no internet. Any
-   LLM API is an *optional* accelerator, never a dependency.
-3. **The metric moat is geometry, not AI.** Font height in millimetres comes
-   from an ArUco scale marker + pixel measurement — physics, deterministic,
-   court-defensible. No model guesses a size.
-4. **Rules are data, not code.** Thresholds and required declarations live in
-   versioned YAML so an officer can amend them without a redeploy.
-5. **Flat over nested.** Many shallow top-level modules; nesting kept ≤ 2 deep.
+   fields; a deterministic rule engine produces the verdict. Verdicts are
+   reproducible and cite the exact rule clause. An LLM never decides compliance.
+2. **Decision-support, not adjudication.** The system reports **potential**
+   non-compliance with a confidence + evidence crop, flagged for officer
+   verification — it makes no final legal finding and cannot verify actual
+   contents/weight from an image. "Not detected in the image" ≠ "legally absent";
+   low-confidence items route to mandatory officer review.
+3. **Calibrated or nothing.** Millimetre measurement requires an in-plane
+   known-size marker (ArUco/AprilTag) + perspective correction, and is reported
+   as value ± uncertainty. Uncalibrated images get no mm verdict; barcode width
+   is never used as the scale (magnification varies).
+4. **Rules are versioned data.** Each rule stores clause + source URL + gazette +
+   effective-from + applicability, so an officer amends it without a redeploy and
+   reports cite only officially verified text.
+5. **Offline-first.** The full pipeline runs on-device with no internet. Any
+   LLM API is an *optional* accelerator, never a dependency — and never for
+   personal/location data (DPDP Act, 2023).
+6. **The moat is geometry, not AI.** Font height in mm comes from marker scale +
+   pixel measurement — physics, deterministic. No model guesses a size.
+7. **Flat over nested.** Many shallow top-level modules; nesting kept ≤ 2 deep.
 
 ## 2. Pipeline
 

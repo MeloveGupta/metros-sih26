@@ -13,16 +13,25 @@ Grounded in the actual Legal Metrology (Packaged Commodities) Rules, 2011
 
 > **Not another OCR app — a calibrated measuring instrument.**
 > Photograph a packaged product; MetroScan measures each mandatory declaration
-> to the **millimetre**, checks it against the Legal Metrology (Packaged
-> Commodities) Rules, 2011, and produces a **clause-cited, court-ready
-> compliance report — fully offline.**
+> to the **millimetre (with a stated uncertainty)**, checks it against the Legal
+> Metrology (Packaged Commodities) Rules, 2011, and produces a **clause-cited,
+> evidence-backed record of *potential* non-compliance — flagged for officer
+> verification, fully offline.**
+
+> **Legal guardrail (say this, believe this):** the system is *decision-support*.
+> It flags **potential** non-compliance with a confidence and an evidence crop;
+> it does **not** make final legal findings and cannot verify actual
+> contents/weight from an image. Authorised physical measurement remains
+> necessary for any enforcement action. Never demo the word "VIOLATION" as a
+> verdict — say **"flagged for officer verification."**
 
 ---
 
 ## 1. USP (Unique Selling Proposition)
 
-**"We verify Legal Metrology compliance to the millimetre, deterministically,
-offline, with evidence an enforcement officer can act on."**
+**"We measure Legal Metrology declarations to the millimetre, deterministically,
+offline — turning a photo into traceable, clause-cited evidence an officer can
+verify and act on."**
 
 Four pillars — each is something a generic "upload → GPT says compliant" demo
 **cannot** claim:
@@ -39,14 +48,18 @@ Four pillars — each is something a generic "upload → GPT says compliant" dem
 **A millimetre ruler for labels.**
 
 Snap a product with an ArUco reference card in frame → the app boxes each
-declaration, prints its letter height **in real millimetres**, and stamps
-✅/❌ against the exact Rule 7 threshold for that panel's area.
+declaration, prints its letter height **in real millimetres with an uncertainty
+interval**, and shows ✅ / ⚠️-flag against the exact Rule 7 threshold for that
+panel's area. **We explicitly reject uncalibrated measurement** — no marker in
+frame, no number.
 
 **On-stage moment:**
-> *"MRP letters measure 0.8 mm. Rule 7 Table-I requires 1.0 mm for a 42 cm²
-> panel. → VIOLATION."*
+> *"MRP letters measure 0.8 mm ± 0.2 mm. Rule 7 Table-I requires ≥ 1.0 mm for a
+> 42 cm² panel → flagged as potential non-compliance for officer verification."*
 
-No other team can put a trustworthy number on screen. That single moment is the win.
+No other team can put a trustworthy, uncertainty-bounded number on screen. That
+single moment is the win — and the honest framing is exactly what a Legal
+Metrology officer trusts.
 
 ## 3. The problem (slide: Problem Statement)
 
@@ -89,14 +102,25 @@ Rule 7 compliance is a **two-measurement geometry problem**, both from one scale
 | 500 ≤ A < 2500                       | 4.0                    | 6.0            |
 | A ≥ 2500                             | 6.0                    | 6.0            |
 
-**(b) Glyph height (mm)** vs. that band — plus Rule 7(3): absolute 1 mm floor
-(2 mm molded), width ≥ ⅓ height (except `1, i, I, l`).
+**(b) Glyph height (mm ± uncertainty)** vs. that band — plus Rule 7(3): absolute
+1 mm floor (2 mm molded), width ≥ ⅓ height (except `1, i, I, l`).
 
 > A monocular photo has **no absolute scale** — the same letter is 2 mm or 20 mm
 > depending on camera distance, and both render identical pixels. No AI recovers
-> information the image doesn't contain. The ArUco marker injects the missing
-> scale; the rest is deterministic geometry. **This is why an LLM cannot do it
-> and we can.**
+> information the image doesn't contain. A known-size **ArUco/AprilTag card** (in
+> the same plane as the declaration) injects the missing scale; **homography /
+> perspective correction** flattens the panel; the rest is deterministic
+> geometry with a reported error bound. **This is why an LLM cannot do it and we
+> can.**
+
+**Two honesty rules that build trust (not weaken the pitch):**
+- **Reject uncalibrated measurement.** No marker in frame → no mm number.
+- **Do not use barcode width as the scale** — EAN-13 magnification/printing
+  varies (it is *not* universally 37.29 mm). Only a purpose-printed reference
+  card or ruler is trustworthy.
+- Reliable for **guided, planar** captures; degraded for curved / shiny /
+  crumpled / transparent / steeply angled packs → report low confidence, require
+  officer review, never auto-conclude.
 
 ## 6. What we check (slide: Features)
 
@@ -120,6 +144,34 @@ width ratio, principal-display-panel placement.
 reports (PDF + DOCX) with evidence photos, searchable product/inspection
 repository, role-based access (officer/admin/auditor), enforcement dashboard,
 immutable audit log.
+
+## 6b. Feature shortlist — what we build, in order (slide: Scope)
+
+Ranked by impact × uniqueness × feasibility. All sit on one small baseline
+(image capture, OCR, field extraction, versioned rules, evidence crops, officer
+confirmation, repository, PDF/DOCX export).
+
+| # | Feature | Role | Verdict |
+|---|---------|------|---------|
+| 1 | **Calibrated font-height assistance** | the hero; mm ± uncertainty vs Rule 7 | **Must have** |
+| 2 | **Evidence-first inspection record** | image → OCR → field → rule → officer decision, one traceable record (SHA-256 hash, timestamp, optional geo) | **Must have** |
+| 3 | **Batch history & change detection** | spot label drift across scans of the same SKU/batch | Strongly recommended |
+| 4 | **Transparent risk-based prioritisation** | explainable "inspect these first, and why" queue | Strongly recommended |
+| 5 | E-commerce listing comparison | check online listing images vs checklist | Optional (after core) |
+
+**Defer / avoid (say why if asked):**
+- *Live e-commerce scraping* — CAPTCHA / anti-bot / platform terms break a live
+  demo; use authorised static sample listings instead. **Defer.**
+- *Multi-view 3D reconstruction* — high risk on curved/shiny packs. **Avoid now.**
+- *Counterfeit detection* — needs forensic genuine/fake data; anomaly ≠ proof. **Avoid now.**
+- *Blockchain* — hashing + audit log + RBAC is simpler and more relevant. **Avoid.**
+- *LLM-driven legal decisions* — verdicts must be deterministic + versioned; an
+  LLM may assist search/explanation but must never decide compliance. **Avoid.**
+
+**Evidence-first note (Feature 2):** a SHA-256 hash proves the file is unaltered
+*after capture* — it does **not** prove the photo is of the claimed product or
+place, and a hash alone is not court-admissibility. Preserve originals, keep
+transformation metadata, follow DPDP Act 2023 for any personal/location data.
 
 ## 7. Technical approach (slide: Technical Approach)
 
@@ -166,8 +218,13 @@ core stays Python, and a Rust/Go API gateway is a clean v2 wrapper if it scales.
   - *Curved / reflective labels* → image preprocessing + flag low-confidence for
     manual review; never auto-fail silently.
   - *Rules change* → thresholds live in YAML; an officer edits without redeploy.
-  - *False positives erode trust* → every verdict cites clause + evidence crop;
-    human override is logged.
+  - *False positives erode trust* → every flag cites clause + evidence crop +
+    confidence; human override is logged; mm always carries an uncertainty band.
+  - *"Not detected in image" ≠ "legally absent"* → the engine separates
+    detection from legal conclusion and routes low-confidence items to mandatory
+    officer review.
+  - *Privacy* → DPDP Act 2023: encrypt originals/metadata, minimise
+    location/personnel data, role-gated access, audit every export.
 
 ## 9. Impact & benefits (slide: Impact)
 
@@ -188,18 +245,39 @@ the Rules from one that wrapped an OCR API. We show:
 - a report they could **actually file**,
 - running **offline**, respecting data sovereignty.
 
-**Positioning line to repeat:** *measurement-grade, not AI-guessed.* Never say
-"AI figures out the font size."
+**Positioning line to repeat:** *measurement-grade decision-support, not
+AI-guessed verdicts.* Never say "AI figures out the font size," and never say
+"VIOLATION" as a final finding — say **"potential non-compliance, flagged for
+officer verification."**
+
+**Team positioning statement (put on a slide):**
+> *"Rather than another OCR pass/fail tool, our platform helps an officer capture
+> traceable evidence, identify potential declaration and font-size issues using
+> calibrated measurement with stated uncertainty, compare declarations across
+> batches, and focus limited inspections where documented history indicates
+> higher risk."*
 
 ## 11. References (slide: Research & References)
 
-- Legal Metrology Act, 2009; Legal Metrology (Packaged Commodities) Rules, 2011
-  (consolidated with amendments) — Dept of Consumer Affairs. In-repo:
-  `docs/lmpc-2011.pdf`.
+- **Section 18, Legal Metrology Act, 2009** — the statutory hook: prohibits
+  manufacture, packing, import, sale, distribution, delivery or display for sale
+  of pre-packaged commodities unless prescribed declarations are made in the
+  prescribed manner. (Report headers/rule metadata cite this as source authority.)
+- Legal Metrology (Packaged Commodities) Rules, 2011 (consolidated with
+  amendments) — Dept of Consumer Affairs. In-repo: `docs/lmpc-2011.pdf`.
 - Key amendment: GSR 629(E), 23-06-2017 (w.e.f. 01-01-2018) — Rule 6 & Rule 7
-  Table-I as used above.
-- [consumeraffairs.gov.in — Legal Metrology Act & Rules](https://consumeraffairs.gov.in/pages/legal-metrology-act)
-- ArUco markers — OpenCV `cv2.aruco` (camera-independent metric scale recovery).
+  Table-I as used above. Rule 6(10)/6(10A) — e-commerce display & country of origin.
+- **Verify before coding** (confirm latest consolidated text, schedules,
+  exemptions, commencement dates from official notifications):
+  - [Dept of Consumer Affairs](https://consumeraffairs.nic.in/)
+  - [Indian Institute of Legal Metrology — Acts & Rules](https://iilm.gov.in/more/act-rules)
+  - [Gazette of India / e-Gazette](https://egazette.nic.in/)
+  - [MeitY — DPDP Act 2023 & privacy](https://www.meity.gov.in/)
+  - [GS1 barcode standards](https://www.gs1.org/standards/barcodes)
+- **DPDP Act, 2023** — governs any personal / location / officer data the tool
+  stores; encrypt, minimise, role-gate.
+- ArUco / AprilTag markers — OpenCV `cv2.aruco` (camera-independent metric scale
+  recovery) + homography for perspective correction.
 - PaddleOCR — open-source OCR with character-level bounding boxes.
 
 ---
@@ -222,7 +300,7 @@ the Rules from one that wrapped an OCR API. We show:
 ## Appendix — 60-second demo script
 
 1. Real product + ArUco card in frame — snap.
-2. Overlay: each declaration boxed, letter height in mm labeled.
-3. One field fails Rule 7 → red, with clause + measured-vs-required.
-4. Tap → PDF report generates, evidence crop embedded.
-5. Close: *"A millimetre-accurate, clause-cited violation an officer can act on — offline."*
+2. Overlay: each declaration boxed, letter height in **mm ± uncertainty** labeled.
+3. One field below the Rule 7 threshold → ⚠️ flagged, with clause + measured-vs-required.
+4. Tap → PDF report generates, evidence crop + confidence + "officer verification required" embedded.
+5. Close: *"A calibrated, clause-cited flag of potential non-compliance an officer can verify and act on — offline."*
