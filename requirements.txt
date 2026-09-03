@@ -34,7 +34,7 @@ minio==7.2.13
 
 # --- Auth ---
 pyjwt==2.10.1
-passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
 
 # --- Dev / test ---
 pytest==8.3.4
