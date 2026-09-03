@@ -1,0 +1,110 @@
+"""Persistence + search for scans, products, users, and the audit log."""
+from __future__ import annotations
+
+import uuid
+from typing import List, Optional
+
+from sqlalchemy import create_engine, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from ..core.config import get_settings
+from ..schemas.report import Report
+from .models import AuditLog, Base, ProductRow, ScanRow, User
+
+
+def make_engine(database_url: Optional[str] = None) -> Engine:
+    url = database_url or get_settings().database_url
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    return create_engine(url, connect_args=connect_args, future=True)
+
+
+def init_db(engine: Engine) -> None:
+    """Create all tables (idempotent)."""
+    Base.metadata.create_all(engine)
+
+
+def session_factory(engine: Engine) -> sessionmaker:
+    return sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+
+# --- scans ---
+
+def save_report(session: Session, report: Report,
+                created_by: Optional[str] = None) -> ScanRow:
+    """Persist a report (and its product, if named) and return the scan row."""
+    product_id = None
+    if report.product and (report.product.name or report.product.barcode_text):
+        product_id = str(uuid.uuid4())
+        session.add(ProductRow(
+            id=product_id,
+            name=report.product.name or "",
+            brand=report.product.brand or "",
+            category=report.product.category or "",
+            source=report.product.source or "",
+            barcode_text=report.product.barcode_text or "",
+        ))
+
+    row = ScanRow(
+        id=report.report_id,
+        product_id=product_id,
+        ref_no=report.ref_no or "",
+        disposition=report.disposition.value,
+        calibrated=report.calibration.verdict.value,
+        sha256=report.evidence.original.sha256,
+        report_json=report.model_dump_json(by_alias=True),
+        created_by=created_by,
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
+def get_report(session: Session, scan_id: str) -> Optional[Report]:
+    row = session.get(ScanRow, scan_id)
+    if row is None:
+        return None
+    return Report.model_validate_json(row.report_json)
+
+
+def search_scans(
+    session: Session,
+    *,
+    disposition: Optional[str] = None,
+    sha256: Optional[str] = None,
+    product_name: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[ScanRow]:
+    stmt = select(ScanRow)
+    if disposition:
+        stmt = stmt.where(ScanRow.disposition == disposition)
+    if sha256:
+        stmt = stmt.where(ScanRow.sha256 == sha256)
+    if product_name:
+        stmt = (stmt.join(ProductRow, ScanRow.product_id == ProductRow.id)
+                    .where(ProductRow.name.ilike(f"%{product_name}%")))
+    stmt = stmt.order_by(ScanRow.created_at.desc()).limit(limit).offset(offset)
+    return list(session.scalars(stmt))
+
+
+# --- audit ---
+
+def append_audit(session: Session, *, action: str, user_id: Optional[str] = None,
+                 target: str = "", reason: str = "") -> None:
+    session.add(AuditLog(user_id=user_id, action=action, target=target, reason=reason))
+    session.commit()
+
+
+# --- users ---
+
+def create_user(session: Session, *, email: str, name: str, role: str,
+                pw_hash: str) -> User:
+    user = User(id=str(uuid.uuid4()), email=email, name=name, role=role, pw_hash=pw_hash)
+    session.add(user)
+    session.commit()
+    return user
+
+
+def get_user_by_email(session: Session, email: str) -> Optional[User]:
+    return session.scalar(select(User).where(User.email == email))
