@@ -6,7 +6,6 @@ import CameraCapture from "./CameraCapture.jsx";
 function ScanForm({ onReport }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [markerMm, setMarkerMm] = useState("40");
   const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -24,7 +23,7 @@ function ScanForm({ onReport }) {
     setBusy(true);
     setErr("");
     try {
-      onReport(await scan({ file, markerMm, productName }));
+      onReport(await scan({ file, productName }));
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -57,18 +56,11 @@ function ScanForm({ onReport }) {
         </figure>
       )}
 
-      <div className="grid2">
-        <label className="field">
-          <span>Marker side (mm)</span>
-          <input className="mono" value={markerMm}
-            onChange={(e) => setMarkerMm(e.target.value)} inputMode="decimal" />
-        </label>
-        <label className="field">
-          <span>Product name</span>
-          <input value={productName} placeholder="optional"
-            onChange={(e) => setProductName(e.target.value)} />
-        </label>
-      </div>
+      <label className="field">
+        <span>Product name</span>
+        <input value={productName} placeholder="optional"
+          onChange={(e) => setProductName(e.target.value)} />
+      </label>
 
       <button className="cta" type="submit" disabled={busy}>
         {busy ? "Measuring…" : "Scan & measure"}
