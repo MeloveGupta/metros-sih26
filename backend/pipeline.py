@@ -144,17 +144,21 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
             ratio = glyph_width_ratio(cal.H_img_to_mm, t.bbox)
         except Exception:
             continue
-        measured.append((hmm, ratio, txt))
+        has_digit = bool(re.search(r"\d", txt))
+        measured.append((hmm, ratio, txt, has_digit))
     if not measured:
         return FontInputs()
-    # Smallest text is the compliance-critical one; report the 3 smallest.
+    # Prefer declaration text (MRP, quantity, dates, contact all carry digits)
+    # over marketing words like "wafer"/"coated". Fall back to all if none.
+    digit_tokens = [m for m in measured if m[3]]
+    measured = digit_tokens or measured
     measured.sort(key=lambda m: m[0].value)
     area = None
     if panel_area_cm2_known is not None:
         area = MmMeasurement(round(panel_area_cm2_known, 3),
                              round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
     items = [GlyphInput(f'"{txt[:18]}"', height=hmm, width_ratio=ratio, molded=molded)
-             for hmm, ratio, txt in measured[:3]]
+             for hmm, ratio, txt, _ in measured[:3]]
     return FontInputs(panel_area_cm2=area, items=items)
 
 

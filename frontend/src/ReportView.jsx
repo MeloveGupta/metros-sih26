@@ -224,7 +224,12 @@ export default function ReportView({ report, onUpdate }) {
 
       <Verification report={report} onFinalized={onUpdate} />
 
-      <a className="dl" href={pdfUrl(report.report_id)} target="_blank" rel="noreferrer">Download PDF report</a>
+      {/* Download only after the officer finalizes (or when nothing needs review). */}
+      {(report.finalized_by || itemsNeedingReview(report).length === 0) && (
+        <a className="dl" href={pdfUrl(report.report_id)} target="_blank" rel="noreferrer">
+          Download PDF report
+        </a>
+      )}
     </section>
   );
 }
