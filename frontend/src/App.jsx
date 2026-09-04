@@ -2,49 +2,36 @@ import React, { useState } from "react";
 import { scan } from "./api.js";
 import ReportView from "./ReportView.jsx";
 
-function ImageSlot({ label, hint, shot, onPick, onClear }) {
-  const inputId = `slot-${label.replace(/\s+/g, "-").toLowerCase()}`;
-  return (
-    <div className="slot">
-      <input id={inputId} type="file" accept="image/*" capture="environment"
-        hidden onChange={(e) => onPick(e.target.files[0] || null)} />
-      {shot ? (
-        <figure className="slot-fill">
-          <img src={shot.url} alt={label} />
-          <button type="button" className="shot-x" onClick={onClear}
-            aria-label={`Remove ${label}`}>×</button>
-        </figure>
-      ) : (
-        <label htmlFor={inputId} className="slot-empty">
-          <span className="slot-plus">+</span>
-          <span className="slot-label">{label}</span>
-          <span className="slot-hint">{hint}</span>
-        </label>
-      )}
-    </div>
-  );
-}
-
 function ScanForm({ onReport }) {
-  const [front, setFront] = useState(null); // {file,url}
-  const [back, setBack] = useState(null);
+  const [shots, setShots] = useState([]); // [{file,url}]
   const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  function setSlot(setter, prev, f) {
+  function addFiles(fileList) {
+    const arr = Array.from(fileList || []).filter(Boolean);
+    if (!arr.length) return;
     setErr("");
-    if (prev) URL.revokeObjectURL(prev.url);
-    setter(f ? { file: f, url: URL.createObjectURL(f) } : null);
+    setShots((prev) => [...prev, ...arr.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
+  }
+
+  function removeShot(i) {
+    setShots((prev) => {
+      const next = [...prev];
+      const [gone] = next.splice(i, 1);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return next;
+    });
   }
 
   async function submit(e) {
     e.preventDefault();
-    if (!front || !back) return setErr("Add both the front and back photos of the pack.");
+    if (shots.length < 2)
+      return setErr("Add at least two photos - front and back of the pack.");
     setBusy(true);
     setErr("");
     try {
-      onReport(await scan({ files: [front.file, back.file], productName }));
+      onReport(await scan({ files: shots.map((s) => s.file), productName }));
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -58,19 +45,28 @@ function ScanForm({ onReport }) {
         <span className="eyebrow">Capture</span>
         <h2>Scan a packaged product</h2>
         <p className="lede">
-          Add the front and back of the pack. The front gives the product name and
-          country of origin; the back carries the mandatory declarations. Include
-          the printed ArUco card in a shot to also measure letter height (Rule 7).
+          Add the front and back of the pack, plus any close-ups of the label. More
+          photos means the reader finds more declarations. Include the printed ArUco
+          card in a shot to also measure letter height (Rule 7).
         </p>
       </div>
 
+      <input id="pickimgs" type="file" accept="image/*" capture="environment"
+        multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+
       <div className="slots">
-        <ImageSlot label="Front of pack" hint="name, brand, origin"
-          shot={front} onPick={(f) => setSlot(setFront, front, f)}
-          onClear={() => setSlot(setFront, front, null)} />
-        <ImageSlot label="Back of pack" hint="MRP, qty, mfg, care"
-          shot={back} onPick={(f) => setSlot(setBack, back, f)}
-          onClear={() => setSlot(setBack, back, null)} />
+        {shots.map((s, i) => (
+          <figure className="slot-fill" key={s.url}>
+            <img src={s.url} alt={`Photo ${i + 1}`} />
+            <button type="button" className="shot-x" onClick={() => removeShot(i)}
+              aria-label={`Remove photo ${i + 1}`}>×</button>
+          </figure>
+        ))}
+        <label htmlFor="pickimgs" className="slot-empty">
+          <span className="slot-plus">+</span>
+          <span className="slot-label">{shots.length ? "Add photo" : "Front / back"}</span>
+          <span className="slot-hint">{shots.length ? `${shots.length} added` : "tap to add"}</span>
+        </label>
       </div>
 
       <label className="field">
@@ -80,7 +76,7 @@ function ScanForm({ onReport }) {
       </label>
 
       <button className="cta" type="submit" disabled={busy}>
-        {busy ? "Analysing…" : "Scan front & back"}
+        {busy ? "Analysing…" : "Scan product"}
       </button>
       {err && <p className="err" role="alert">{err}</p>}
     </form>

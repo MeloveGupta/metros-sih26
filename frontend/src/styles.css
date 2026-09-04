@@ -144,17 +144,17 @@ button { font: inherit; }
 .preview img { width: 100%; border: var(--bd) solid var(--ink); display: block; }
 .preview figcaption { font-size: var(--t-label); font-weight: 600; color: var(--sub); margin-top: 8px; }
 
-/* Front/back capture slots */
-.slots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 4px; }
+/* Image tiles - multiple photos, with a + tile to add more */
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; margin: 18px 0 4px; }
 .slot { position: relative; }
 .slot-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; aspect-ratio: 1; cursor: pointer; text-align: center; padding: 12px;
+  gap: 3px; aspect-ratio: 1; cursor: pointer; text-align: center; padding: 8px;
   border: var(--bd) dashed var(--line-strong); background: var(--g1); color: var(--ink);
 }
 .slot-empty:hover { border-color: var(--ink); }
-.slot-plus { font-size: 2rem; font-weight: 800; line-height: 1; }
-.slot-label { font-weight: 800; text-transform: uppercase; font-size: var(--t-label); letter-spacing: 0.02em; }
+.slot-plus { font-size: 1.75rem; font-weight: 800; line-height: 1; }
+.slot-label { font-weight: 800; text-transform: uppercase; font-size: var(--t-micro); letter-spacing: 0.02em; }
 .slot-hint { font-size: var(--t-micro); color: var(--sub); font-weight: 600; }
 .slot-fill { margin: 0; position: relative; }
 .slot-fill img { width: 100%; aspect-ratio: 1; object-fit: cover; border: var(--bd) solid var(--ink); display: block; }
