@@ -54,7 +54,7 @@ function ScanForm({ onReport }) {
       <input id="pickimgs" type="file" accept="image/*" capture="environment"
         multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
 
-      <div className="slots">
+      <div className={`slots${shots.length ? "" : " slots-empty"}`}>
         {shots.map((s, i) => (
           <figure className="slot-fill" key={s.url}>
             <img src={s.url} alt={`Photo ${i + 1}`} />
@@ -64,8 +64,8 @@ function ScanForm({ onReport }) {
         ))}
         <label htmlFor="pickimgs" className="slot-empty">
           <span className="slot-plus">+</span>
-          <span className="slot-label">{shots.length ? "Add photo" : "Front / back"}</span>
-          <span className="slot-hint">{shots.length ? `${shots.length} added` : "tap to add"}</span>
+          <span className="slot-label">{shots.length ? "Add photo" : "Add photos"}</span>
+          <span className="slot-hint">{shots.length ? `${shots.length} added` : "front, back, close-ups"}</span>
         </label>
       </div>
 

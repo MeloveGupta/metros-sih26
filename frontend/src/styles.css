@@ -153,6 +153,13 @@ button { font: inherit; }
   border: var(--bd) dashed var(--line-strong); background: var(--g1); color: var(--ink);
 }
 .slot-empty:hover { border-color: var(--ink); }
+
+/* Before any photo: the + tile stretches full-width as a dropzone */
+.slots-empty { grid-template-columns: 1fr; }
+.slots-empty .slot-empty { aspect-ratio: auto; padding: 34px 16px; gap: 6px; }
+.slots-empty .slot-plus { font-size: 2.25rem; }
+.slots-empty .slot-label { font-size: var(--t-body); }
+.slots-empty .slot-hint { font-size: var(--t-label); }
 .slot-plus { font-size: 1.75rem; font-weight: 800; line-height: 1; }
 .slot-label { font-weight: 800; text-transform: uppercase; font-size: var(--t-micro); letter-spacing: 0.02em; }
 .slot-hint { font-size: var(--t-micro); color: var(--sub); font-weight: 600; }
