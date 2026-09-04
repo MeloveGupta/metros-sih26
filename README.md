@@ -44,13 +44,19 @@ tests/       pytest suite (38 tests)
 ## Quick start (local)
 
 ```bash
-make install            # venv + backend deps
-make test               # 38 tests
+make install            # venv + CORE backend deps (works on Python 3.11–3.14+)
+make test               # 42 tests
 make card               # -> out/calibration_card.png (print at 100%)
 make seed               # default users: officer@metroscan.gov / officer
 make run                # API on http://localhost:8000  (docs at /docs)
 make frontend-dev       # React app on http://localhost:5173
 ```
+
+**OCR is optional and not in core deps** (PaddleOCR has no wheels on newer
+Python). Read label text three ways:
+- paste it (`--label-text` / the UI's label field) — works everywhere, no extra install;
+- `make install-llm` + `ant auth login` — Claude extractor, no API key;
+- `make install-ocr` — on-device PaddleOCR (needs Python ≈3.12; use a separate venv).
 
 Offline single scan without the server:
 

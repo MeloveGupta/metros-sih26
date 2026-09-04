@@ -1,0 +1,11 @@
+# Optional on-device OCR (PaddleOCR). Install ONLY if you want the server to read
+# label text from images automatically instead of pasting label text or using
+# the LLM extractor:  pip install -r requirements-ocr.txt
+#
+# NOTE: paddlepaddle ships wheels only for specific Python versions (roughly
+# 3.8–3.12 at time of writing) and specific OS/arch. If pip says "No matching
+# distribution", your Python is unsupported by paddle — use Python 3.12 in a
+# separate venv, or skip OCR and use --label-text / --llm instead.
+
+paddleocr>=2.9
+paddlepaddle>=2.6

@@ -1,46 +1,48 @@
+# Core backend deps. OCR (PaddleOCR) is intentionally NOT here — it has no
+# wheels on newer Python and is only needed for on-device text reading; install
+# it separately with `pip install -r requirements-ocr.txt` if you want it.
+# Without it, use the label-text path or the LLM extractor.
+#
+# Pins are lower-bounds so the resolver can pick wheels that exist for your
+# Python version (3.11–3.14+).
+
 # --- API ---
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.4
-pydantic-settings==2.7.1
-python-multipart==0.0.20
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.10
+python-multipart>=0.0.20
 
 # --- Vision (the moat) ---
-opencv-contrib-python==4.10.0.84   # cv2.aruco lives in contrib
-numpy==2.2.1
-paddleocr==2.9.1
-paddlepaddle==2.6.2
-Pillow==11.1.0
+opencv-contrib-python>=4.10      # cv2.aruco lives in contrib
+numpy>=1.26
+Pillow>=11.0
 
-# --- Field extraction ---
-spacy==3.8.3
-regex==2024.11.6
+# --- Field extraction (offline) ---
+regex>=2024.11
 
 # --- Rules ---
-PyYAML==6.0.2
+PyYAML>=6.0
 
 # --- Reports ---
-weasyprint==63.1
-python-docx==1.1.2
-Jinja2==3.1.5
+weasyprint>=63          # PDF; needs native cairo/pango at runtime (optional)
+python-docx>=1.1
+Jinja2>=3.1
 
 # --- DB ---
-SQLAlchemy==2.0.36
-psycopg[binary]==3.2.3
-alembic==1.14.0
+SQLAlchemy>=2.0
+# psycopg[binary] only needed for PostgreSQL; SQLite (default) needs nothing.
+# psycopg[binary]>=3.2
 
-# --- Storage ---
-minio==7.2.13
+# --- Storage (optional; only for MinIO/S3 media) ---
+# minio>=7.2
 
 # --- Auth ---
-pyjwt==2.10.1
-bcrypt==4.2.1
+pyjwt>=2.10
+bcrypt>=4.2
 
-# --- Optional LLM extraction fast-path ---
-# Auth is by `ant auth login` (OAuth), not an API key. Only needed if you pass
-# --llm / llm=true; the offline regex path needs none of this.
-anthropic==0.69.0
+# --- Optional LLM extraction fast-path (auth via `ant auth login`, no key) ---
+# anthropic>=0.69
 
 # --- Dev / test ---
-pytest==8.3.4
-httpx==0.28.1
+pytest>=8.3
+httpx>=0.28

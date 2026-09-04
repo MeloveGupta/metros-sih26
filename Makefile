@@ -1,11 +1,13 @@
-.PHONY: help venv install test run seed card frontend-dev frontend-build up down
+.PHONY: help venv install install-ocr install-llm test run seed card frontend-dev frontend-build up down
 
 PY ?= python3
 VENV ?= .venv
 BIN := $(VENV)/bin
 
 help:
-	@echo "make install        create venv and install backend deps"
+	@echo "make install        create venv and install core backend deps"
+	@echo "make install-ocr    add PaddleOCR (optional; Python 3.12 recommended)"
+	@echo "make install-llm    add the Claude extractor (optional; ant auth login)"
 	@echo "make test           run the backend test suite"
 	@echo "make seed           create default users in the database"
 	@echo "make card           generate the printable ArUco calibration card"
@@ -19,6 +21,12 @@ $(BIN)/python:
 install: $(BIN)/python
 	$(BIN)/pip install --upgrade pip
 	$(BIN)/pip install -r requirements.txt
+
+install-ocr: $(BIN)/python
+	$(BIN)/pip install -r requirements-ocr.txt
+
+install-llm: $(BIN)/python
+	$(BIN)/pip install -r requirements-llm.txt
 
 test:
 	$(BIN)/python -m pytest tests/ -q
