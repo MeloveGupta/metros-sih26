@@ -144,11 +144,22 @@ button { font: inherit; }
 .preview img { width: 100%; border: var(--bd) solid var(--ink); display: block; }
 .preview figcaption { font-size: var(--t-label); font-weight: 600; color: var(--sub); margin-top: 8px; }
 
-.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin: 16px 0 0; }
-.shot { position: relative; margin: 0; }
-.shot img { width: 100%; aspect-ratio: 1; object-fit: cover; border: var(--bd) solid var(--ink); display: block; }
+/* Front/back capture slots */
+.slots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 4px; }
+.slot { position: relative; }
+.slot-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; aspect-ratio: 1; cursor: pointer; text-align: center; padding: 12px;
+  border: var(--bd) dashed var(--line-strong); background: var(--g1); color: var(--ink);
+}
+.slot-empty:hover { border-color: var(--ink); }
+.slot-plus { font-size: 2rem; font-weight: 800; line-height: 1; }
+.slot-label { font-weight: 800; text-transform: uppercase; font-size: var(--t-label); letter-spacing: 0.02em; }
+.slot-hint { font-size: var(--t-micro); color: var(--sub); font-weight: 600; }
+.slot-fill { margin: 0; position: relative; }
+.slot-fill img { width: 100%; aspect-ratio: 1; object-fit: cover; border: var(--bd) solid var(--ink); display: block; }
 .shot-x {
-  position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; line-height: 1;
+  position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; line-height: 1;
   font-size: 18px; font-weight: 800; background: var(--ink); color: var(--card);
   border: var(--bd) solid var(--card); box-shadow: 0 0 0 2px var(--ink); cursor: pointer; padding: 0;
 }
@@ -193,12 +204,20 @@ button { font: inherit; }
   padding: 3px 8px; letter-spacing: 0;
 }
 
-.tblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.tbl { width: 100%; border-collapse: collapse; font-size: var(--t-label); border: var(--bd) solid var(--ink); min-width: 460px; }
-.tbl th { text-align: left; font-size: var(--t-label); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
-  padding: 9px 10px; border-bottom: var(--bd) solid var(--ink); background: var(--g1); }
-.tbl td { padding: 10px; border-bottom: 1.5px solid var(--ink); vertical-align: top; font-weight: 500; }
-.tbl tr:last-child td { border-bottom: 0; }
+/* Declaration list - clean stacked cards (no table, mobile-first) */
+.declist { list-style: none; margin: 8px 0 0; padding: 0; border: var(--bd) solid var(--ink); }
+.decl {
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: "main pill" "value pill";
+  gap: 4px 12px; align-items: start; padding: 12px 14px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.decl:last-child { border-bottom: 0; }
+.decl-main { grid-area: main; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.decl-label { font-weight: 700; }
+.decl-clause { font-size: var(--t-micro); color: var(--sub); }
+.decl-value { grid-area: value; }
+.decl-text { font-size: var(--t-label); }
+.decl .pill { grid-area: pill; align-self: center; }
 .nowrap { white-space: nowrap; }
 
 .pill {
@@ -256,6 +275,10 @@ button { font: inherit; }
   .disp { align-self: flex-start; }
   .sec { font-size: var(--t-lead); }
   .fontrow { box-shadow: none; }
-  .shots { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+}
+@media (max-width: 420px) {
+  /* stack the declaration status under the text on very narrow screens */
+  .decl { grid-template-columns: 1fr; grid-template-areas: "main" "value" "pill"; }
+  .decl .pill { justify-self: start; margin-top: 2px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

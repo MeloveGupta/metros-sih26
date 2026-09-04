@@ -99,8 +99,11 @@ async def scan(
 ):
     # Prototype: no auth. Actions are attributed to a default field officer.
     user = {"sub": "prototype-officer", "role": "officer"}
-    if not images:
-        raise HTTPException(status_code=400, detail="upload at least one image")
+    if len(images) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="upload both the front and back of the pack (two images)",
+        )
 
     decoded = [_decode_image(await f.read()) for f in images]
     # OCR each image (front + back). Text is combined for regex; the images

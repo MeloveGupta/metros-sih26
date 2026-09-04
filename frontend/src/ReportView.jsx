@@ -80,21 +80,22 @@ export default function ReportView({ report }) {
       </div>
 
       <h3 className="sec"><span className="sec-no mono">01</span> Declarations · Rule 6</h3>
-      <div className="tblwrap">
-        <table className="tbl">
-          <thead><tr><th>Declaration</th><th>Clause</th><th>Extracted</th><th>Status</th></tr></thead>
-          <tbody>
-            {report.declarations.map((d) => (
-              <tr key={d.id}>
-                <td>{d.label}</td>
-                <td className="mono nowrap">{d.clause_ref.clause}</td>
-                <td className="muted">{d.extracted || "-"}</td>
-                <td><Pill status={d.status} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ul className="declist">
+        {report.declarations.map((d) => (
+          <li className="decl" key={d.id}>
+            <div className="decl-main">
+              <span className="decl-label">{d.label}</span>
+              <span className="decl-clause mono">{d.clause_ref.clause}</span>
+            </div>
+            <div className="decl-value">
+              {d.extracted
+                ? <span className="decl-text">{d.extracted}</span>
+                : <span className="decl-text muted">not found on pack</span>}
+            </div>
+            <Pill status={d.status} />
+          </li>
+        ))}
+      </ul>
 
       <h3 className="sec"><span className="sec-no mono">02</span> Letter height · Rule 7</h3>
       {fa.panel_area_cm2 && fa.table_i_band && (

@@ -40,7 +40,8 @@ def test_health(client):
 def test_scan_no_auth_and_fetch(client):
     r = client.post(
         "/scan",
-        files={"images": ("chips.png", _marker_png(), "image/png")},
+        files=[("images", ("front.png", _marker_png(), "image/png")),
+               ("images", ("back.png", _marker_png(), "image/png"))],
         data={"label_text": "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g",
               "marker_mm": "40", "product_name": "Masala Chips"},
     )
@@ -64,7 +65,8 @@ def test_scan_no_auth_and_fetch(client):
 def test_scan_without_label_text_still_works(client):
     r = client.post(
         "/scan",
-        files={"images": ("p.png", _marker_png(), "image/png")},
+        files=[("images", ("f.png", _marker_png(), "image/png")),
+               ("images", ("b.png", _marker_png(), "image/png"))],
         data={"marker_mm": "40"},
     )
     assert r.status_code == 200, r.text
@@ -85,10 +87,18 @@ def test_scan_multiple_images(client):
     assert r.json()["calibration"]["verdict"] == "calibrated"
 
 
+def test_single_image_rejected(client):
+    r = client.post("/scan",
+                    files={"images": ("only.png", _marker_png(), "image/png")},
+                    data={"marker_mm": "40"})
+    assert r.status_code == 400
+
+
 def test_override_requires_reason(client):
     scan_id = client.post(
         "/scan",
-        files={"images": ("a.png", _marker_png(), "image/png")},
+        files=[("images", ("f.png", _marker_png(), "image/png")),
+               ("images", ("b.png", _marker_png(), "image/png"))],
         data={"label_text": "MRP Rs. 10", "marker_mm": "40"},
     ).json()["report_id"]
 
