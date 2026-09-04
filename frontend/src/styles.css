@@ -265,18 +265,20 @@ button { font: inherit; }
 
 /* Officer verification */
 .verify { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
-.vrow { border: var(--bd) solid var(--ink); padding: 12px 14px; }
-.vrow-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.vrow-label { font-weight: 700; }
+.vrow { border: var(--bd) solid var(--ink); padding: 12px 14px; overflow: hidden; }
+.vrow-top { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.vrow-label { font-weight: 700; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
+.vrow-top .pill { flex: 0 0 auto; }
 .vbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
 .vbtn {
-  font-family: var(--font); font-weight: 800; text-transform: uppercase; font-size: var(--t-label);
-  letter-spacing: .02em; padding: 10px; cursor: pointer; background: var(--card); color: var(--ink);
-  border: var(--bd) solid var(--ink);
+  font-family: var(--font); font-weight: 800; text-transform: uppercase; font-size: var(--t-micro);
+  letter-spacing: .02em; padding: 10px 6px; cursor: pointer; background: var(--card); color: var(--ink);
+  border: var(--bd) solid var(--ink); width: 100%; text-align: center;
 }
-.vbtn.on-ok { background: var(--ink); color: var(--card); }
-.vbtn.on-bad { background: var(--ink); color: var(--card); }
-.vnote { width: 100%; }
+.vbtn.on-ok, .vbtn.on-bad { background: var(--ink); color: var(--card); }
+.vnote { width: 100%; max-width: 100%; }
+@media (max-width: 420px) { .vbtns { grid-template-columns: 1fr; } }
 .verified-done {
   margin-top: 14px; padding: 14px; border: var(--bd) solid var(--ink); background: var(--g1);
   font-weight: 700; font-size: var(--t-label);
