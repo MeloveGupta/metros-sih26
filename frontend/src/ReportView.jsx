@@ -80,19 +80,21 @@ export default function ReportView({ report }) {
       </div>
 
       <h3 className="sec"><span className="sec-no mono">01</span> Declarations · Rule 6</h3>
-      <table className="tbl">
-        <thead><tr><th>Declaration</th><th>Clause</th><th>Extracted</th><th>Status</th></tr></thead>
-        <tbody>
-          {report.declarations.map((d) => (
-            <tr key={d.id}>
-              <td>{d.label}</td>
-              <td className="mono nowrap">{d.clause_ref.clause}</td>
-              <td className="muted">{d.extracted || "-"}</td>
-              <td><Pill status={d.status} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="tblwrap">
+        <table className="tbl">
+          <thead><tr><th>Declaration</th><th>Clause</th><th>Extracted</th><th>Status</th></tr></thead>
+          <tbody>
+            {report.declarations.map((d) => (
+              <tr key={d.id}>
+                <td>{d.label}</td>
+                <td className="mono nowrap">{d.clause_ref.clause}</td>
+                <td className="muted">{d.extracted || "-"}</td>
+                <td><Pill status={d.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <h3 className="sec"><span className="sec-no mono">02</span> Letter height · Rule 7</h3>
       {fa.panel_area_cm2 && fa.table_i_band && (
