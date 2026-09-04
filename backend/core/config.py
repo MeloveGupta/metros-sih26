@@ -58,7 +58,9 @@ class Settings:
 
     # Database / storage (used by db + api layers)
     database_url: str = field(
-        default_factory=lambda: _env("DATABASE_URL", "sqlite:///./metroscan.db")
+        default_factory=lambda: _env(
+            "DATABASE_URL", f"sqlite:///{REPO_ROOT / 'data' / 'metroscan.db'}"
+        )
     )
 
     # Optional LLM fast-path; empty => fully offline extraction.

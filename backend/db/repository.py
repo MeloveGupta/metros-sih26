@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import List, Optional
 
 from sqlalchemy import create_engine, select
@@ -16,6 +17,10 @@ from .models import AuditLog, Base, ProductRow, ScanRow, User
 def make_engine(database_url: Optional[str] = None) -> Engine:
     url = database_url or get_settings().database_url
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    # Ensure the parent directory exists for a file-based SQLite DB.
+    if url.startswith("sqlite:///") and ":memory:" not in url:
+        db_path = Path(url.replace("sqlite:///", "", 1))
+        db_path.parent.mkdir(parents=True, exist_ok=True)
     return create_engine(url, connect_args=connect_args, future=True)
 
 
