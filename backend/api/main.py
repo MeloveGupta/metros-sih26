@@ -74,7 +74,7 @@ async def scan(
     brand: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
-    llm: bool = Form(False),
+    llm: bool = Form(True),
     session=Depends(get_session),
 ):
     # Prototype: no auth. Actions are attributed to a default field officer.
@@ -96,10 +96,12 @@ async def scan(
     product = Product(name=product_name, brand=brand, category=category, source=source)
     inspection = Inspection(officer=Officer(id=user["sub"] or "unknown", name=user["sub"] or "officer",
                                             role=user["role"]))
+    # Read the label with Claude vision when available, else the offline regex
+    # path. `llm=false` forces offline.
     report = run_scan(img, ocr, marker_mm=marker_mm, dict_name=dict_name,
                       product=product, inspection=inspection,
                       image_file=image.filename or "upload.jpg",
-                      extract_backend="auto" if llm else "regex")
+                      extract_backend="regex" if llm is False else "auto")
 
     save_report(session, report, created_by=user["sub"])
     append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)

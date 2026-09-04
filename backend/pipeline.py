@@ -160,8 +160,10 @@ def run_scan(
                        marker_id=marker_id,
                        max_residual_px=settings.max_homography_residual_px)
 
-    # 2. Extraction + bbox attachment.
-    fields = extract_declarations(ocr.text, catalog, backend=extract_backend)
+    # 2. Extraction + bbox attachment. The image enables the LLM vision path
+    #    (read the label straight from the photo when no OCR text is available).
+    fields = extract_declarations(ocr.text, catalog, backend=extract_backend,
+                                  image=image)
     _attach_bboxes(fields, ocr.tokens)
 
     # 3. Metric font inputs.

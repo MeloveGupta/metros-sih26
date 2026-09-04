@@ -13,15 +13,19 @@ regex parsers.
 """
 from __future__ import annotations
 
+import base64
 import json
+import os
 from typing import List, Optional
 
 from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog
 from .fields import FieldExtraction
 
-# Extraction is a simple, high-volume task -> the cheapest capable tier.
-DEFAULT_MODEL = "claude-haiku-4-5"
+# Text extraction is simple -> cheapest capable tier. Reading a label straight
+# from a photo (vision) benefits from a stronger reader; both are env-overridable.
+DEFAULT_MODEL = os.environ.get("METROS_LLM_MODEL", "claude-haiku-4-5")
+VISION_MODEL = os.environ.get("METROS_LLM_VISION_MODEL", "claude-sonnet-5")
 
 _SYSTEM = (
     "You extract mandatory declarations from an Indian packaged-commodity label "
@@ -87,7 +91,7 @@ def llm_available() -> bool:
         return False
 
 
-def _prompt(text: str, catalog: RuleCatalog, declaration_ids: List[str]) -> str:
+def _declarations_block(catalog: RuleCatalog, declaration_ids: List[str]) -> str:
     wanted = []
     for decl_id in declaration_ids:
         try:
@@ -99,33 +103,11 @@ def _prompt(text: str, catalog: RuleCatalog, declaration_ids: List[str]) -> str:
         "Declarations to extract:\n" + "\n".join(wanted)
         + "\n\nFormat rules: MRP must read like 'MRP Rs./₹ x.xx (incl. of all "
         "taxes)' for format_pass=true; dates need month & year; consumer-care "
-        "needs a phone or email; net quantity needs a standard unit.\n\n"
-        "LABEL TEXT:\n" + text
+        "needs a phone or email; net quantity needs a standard unit."
     )
 
 
-def extract_fields_llm(
-    text: str,
-    catalog: RuleCatalog,
-    declaration_ids: List[str],
-    model: str = DEFAULT_MODEL,
-) -> List[FieldExtraction]:
-    """Extract declarations via Claude, returning the same FieldExtraction list.
-
-    Raises ExtractionError on any failure so the caller can fall back to regex.
-    """
-    client = _client()
-    try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=2000,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
-            messages=[{"role": "user", "content": _prompt(text, catalog, declaration_ids)}],
-        )
-    except Exception as exc:
-        raise ExtractionError(f"LLM request failed: {exc}") from exc
-
+def _parse_response(response, declaration_ids: List[str]) -> List[FieldExtraction]:
     raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
     try:
         data = json.loads(raw)
@@ -148,3 +130,54 @@ def extract_fields_llm(
             applicable=bool(f.get("applicable", True)),
         ))
     return out
+
+
+def _create(client, model: str, content):
+    try:
+        return client.messages.create(
+            model=model,
+            max_tokens=2000,
+            system=_SYSTEM,
+            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
+            messages=[{"role": "user", "content": content}],
+        )
+    except Exception as exc:
+        raise ExtractionError(f"LLM request failed: {exc}") from exc
+
+
+def extract_fields_llm(
+    text: str,
+    catalog: RuleCatalog,
+    declaration_ids: List[str],
+    model: str = DEFAULT_MODEL,
+) -> List[FieldExtraction]:
+    """Extract declarations from OCR text via Claude (text-only path)."""
+    client = _client()
+    prompt = _declarations_block(catalog, declaration_ids) + "\n\nLABEL TEXT:\n" + text
+    return _parse_response(_create(client, model, prompt), declaration_ids)
+
+
+def _encode_jpeg(image) -> str:
+    import cv2
+    ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    if not ok:
+        raise ExtractionError("could not encode image for the vision model")
+    return base64.b64encode(buf.tobytes()).decode("ascii")
+
+
+def extract_fields_from_image(
+    image,
+    catalog: RuleCatalog,
+    declaration_ids: List[str],
+    model: str = VISION_MODEL,
+) -> List[FieldExtraction]:
+    """Read the label directly from a BGR image via Claude vision (no OCR needed)."""
+    client = _client()
+    content = [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                      "data": _encode_jpeg(image)}},
+        {"type": "text", "text": _declarations_block(catalog, declaration_ids)
+         + "\n\nRead the packaged-product label in the image and extract the "
+           "declarations. Transcribe values verbatim from the label."},
+    ]
+    return _parse_response(_create(client, model, content), declaration_ids)

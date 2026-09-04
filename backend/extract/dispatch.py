@@ -1,13 +1,14 @@
-"""Choose the extraction backend: offline regex (default) or the LLM fast-path.
+"""Choose the extraction backend: offline regex (default) or the Claude LLM.
 
-`auto` uses the LLM only when it is actually usable (SDK present + an
+`auto` uses Claude only when it is actually usable (SDK present + an
 `ant auth login` session or token), and always falls back to the deterministic
-regex parsers on any failure — so the tool never hard-depends on network or
-credentials.
+regex parsers on any failure -- so the tool never hard-depends on network or
+credentials. When an image is supplied, the LLM path reads the label directly
+via vision (no OCR needed); otherwise it reads the provided OCR/label text.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog
@@ -18,11 +19,13 @@ def extract_declarations(
     text: str,
     catalog: RuleCatalog,
     backend: str = "regex",
+    image=None,
 ) -> List[FieldExtraction]:
     """Extract declarations using the requested backend.
 
     backend: "regex" (offline default), "llm" (require Claude), or "auto"
-    (LLM if available, else regex).
+    (Claude if available, else regex). `image` (a BGR ndarray) enables the
+    vision path.
     """
     ids = [d.id for d in catalog.declarations]
 
@@ -30,9 +33,15 @@ def extract_declarations(
         return extract_fields(text, ids)
 
     if backend in ("llm", "auto"):
-        from .llm import extract_fields_llm, llm_available
+        from .llm import (
+            extract_fields_from_image,
+            extract_fields_llm,
+            llm_available,
+        )
         if backend == "llm" or llm_available():
             try:
+                if image is not None:
+                    return extract_fields_from_image(image, catalog, ids)
                 return extract_fields_llm(text, catalog, ids)
             except ExtractionError:
                 if backend == "llm":
