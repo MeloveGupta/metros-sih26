@@ -109,6 +109,45 @@ def _build_font_inputs(
     return FontInputs(panel_area_cm2=area, items=items)
 
 
+def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
+                      panel_area_cm2_known: Optional[float] = None) -> FontInputs:
+    """Measure letter height directly from OCR text tokens (Rule 7).
+
+    Rule 7 is about the MINIMUM letter height on the panel, so we measure every
+    text token in real mm and report the smallest few. This does not depend on
+    matching a declaration value to a token, which is unreliable with an LLM
+    reader.
+    """
+    if not cal.calibrated or not tokens:
+        return FontInputs()
+    mean_side = _mean_side_px(cal)
+    measured = []
+    for t in tokens:
+        if not t.bbox:
+            continue
+        x, y, w, h = t.bbox
+        if w <= 1 or h <= 1 or len(t.text.strip()) < 2:
+            continue
+        try:
+            hmm = glyph_height_mm(cal.H_img_to_mm, t.bbox, cal.marker_mm,
+                                  mean_side, cal.residual_px)
+            ratio = glyph_width_ratio(cal.H_img_to_mm, t.bbox)
+        except Exception:
+            continue
+        measured.append((hmm, ratio, t.text.strip()))
+    if not measured:
+        return FontInputs()
+    # Smallest text is the compliance-critical one; report the 3 smallest.
+    measured.sort(key=lambda m: m[0].value)
+    area = None
+    if panel_area_cm2_known is not None:
+        area = MmMeasurement(round(panel_area_cm2_known, 3),
+                             round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
+    items = [GlyphInput(f'"{txt[:18]}"', height=hmm, width_ratio=ratio, molded=molded)
+             for hmm, ratio, txt in measured[:3]]
+    return FontInputs(panel_area_cm2=area, items=items)
+
+
 def _to_calibration_schema(cal: CalibrationResult) -> Calibration:
     return Calibration(
         reference="aruco_card",
@@ -183,13 +222,29 @@ def run_scan(
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
     fields = extract_declarations(combined_text, catalog, backend=extract_backend,
                                   images=list(images))
-    # Font measurement needs boxes from the marker image's OCR.
-    if cal_idx < len(ocrs) and ocrs[cal_idx]:
-        _attach_bboxes(fields, ocrs[cal_idx].tokens)
 
-    # 3. Metric font inputs (only meaningful when calibrated).
-    font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
-                                     panel_area_cm2_known=panel_area_cm2)
+    # Font measurement (Rule 7) needs glyph boxes from the MARKER image's OCR.
+    # In the vision path OCR was skipped for speed, so if a card was found but we
+    # have no tokens for that image, run OCR now on just that one image.
+    marker_tokens = ocrs[cal_idx].tokens if cal_idx < len(ocrs) and ocrs[cal_idx] else []
+    if cal.calibrated and not marker_tokens:
+        try:
+            from .vision.ocr import tesseract_available, tesseract_ocr
+            if tesseract_available():
+                marker_tokens = tesseract_ocr(marker_image).tokens
+        except Exception:
+            marker_tokens = []
+    if marker_tokens:
+        _attach_bboxes(fields, marker_tokens)
+
+    # 3. Metric font inputs (Rule 7). Prefer measuring the actual label text
+    #    tokens on the calibrated image; fall back to field-bbox measurement.
+    if cal.calibrated and marker_tokens:
+        font_inputs = _font_from_tokens(cal, marker_tokens, molded,
+                                        panel_area_cm2_known=panel_area_cm2)
+    else:
+        font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
+                                         panel_area_cm2_known=panel_area_cm2)
 
     # 4. Deterministic evaluation.
     declarations, font_analysis, summary = evaluate(

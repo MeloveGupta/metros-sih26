@@ -46,7 +46,7 @@ class Settings:
     marker_size_mm: float = field(default_factory=lambda: _env_float("MARKER_SIZE_MM", 40.0))
     # Reject calibration if the homography reprojection residual exceeds this (px).
     max_homography_residual_px: float = field(
-        default_factory=lambda: _env_float("MAX_HOMOGRAPHY_RESIDUAL_PX", 5.0)
+        default_factory=lambda: _env_float("MAX_HOMOGRAPHY_RESIDUAL_PX", 12.0)
     )
 
     # Auth

@@ -26,7 +26,7 @@ def test_full_scan_calibrated(scene_factory):
     mrp = next(d for d in report.declarations if d.id == "mrp")
     assert mrp.status == Status.COMPLIANT           # good MRP format
     assert report.font_analysis.items, "font measured"
-    fi = next(i for i in report.font_analysis.items if i.declaration_id == "mrp")
+    fi = report.font_analysis.items[0]              # token-based measurement
     assert fi.height_mm.value == pytest.approx(9.0, rel=0.05)
     assert fi.status == Status.COMPLIANT            # 9mm >> threshold
 
@@ -51,13 +51,12 @@ def test_full_scan_uncalibrated_no_mm(scene_factory):
 
 
 def test_disposition_flags_when_font_below(scene_factory):
-    # Tiny glyph: 12px tall at 0.1mm/px => 1.2mm, panel 50<=A<100 threshold 1.5mm.
-    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 150, 8, 12))
+    # Tiny glyph: 7px tall at 0.1mm/px => 0.7mm, below the 1.0mm absolute floor.
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 150, 5, 7))
     text = "MRP Rs. 45.00 (incl. of all taxes)"
     ocr = OcrResult(text=text, tokens=[Token(text=text, bbox=meta["glyph_bbox_px"], confidence=0.9)])
-    panel = [(560, 120), (1460, 120), (1460, 680), (560, 680)]  # ~50 cm^2
 
-    report = run_scan(img, ocr, marker_mm=40.0, panel_polygon_px=panel)
-    fi = next(i for i in report.font_analysis.items if i.declaration_id == "mrp")
+    report = run_scan(img, ocr, marker_mm=40.0)
+    fi = report.font_analysis.items[0]
     assert fi.status == Status.POTENTIAL_NON_COMPLIANCE
     assert report.disposition == Status.POTENTIAL_NON_COMPLIANCE

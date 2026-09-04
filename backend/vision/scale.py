@@ -53,14 +53,66 @@ def _resolve_dictionary(name: str):
     return aruco.Dictionary_get(const)
 
 
-def _detect_markers(gray: np.ndarray, dictionary):
+def _make_params():
+    """Detector params tuned for real phone photos of a printed card.
+
+    Wider adaptive-threshold window range (marker size varies a lot in a
+    product+card shot), lower min perimeter (catch a small marker), sub-pixel
+    corner refinement (accurate mm), tolerant polygon approximation.
+    """
     aruco = cv2.aruco
+    params = aruco.DetectorParameters() if hasattr(aruco, "ArucoDetector") \
+        else aruco.DetectorParameters_create()
+    params.adaptiveThreshWinSizeMin = 3
+    params.adaptiveThreshWinSizeMax = 53
+    params.adaptiveThreshWinSizeStep = 8
+    params.minMarkerPerimeterRate = 0.01     # allow a smaller marker in frame
+    params.maxMarkerPerimeterRate = 4.0
+    params.polygonalApproxAccuracyRate = 0.06
+    params.minCornerDistanceRate = 0.03
+    try:
+        params.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+        params.cornerRefinementWinSize = 5
+    except Exception:
+        pass
+    return params
+
+
+def _detect_once(gray: np.ndarray, dictionary):
+    aruco = cv2.aruco
+    params = _make_params()
     if hasattr(aruco, "ArucoDetector"):  # OpenCV >= 4.7
-        params = aruco.DetectorParameters()
-        detector = aruco.ArucoDetector(dictionary, params)
-        return detector.detectMarkers(gray)
-    params = aruco.DetectorParameters_create()
+        return aruco.ArucoDetector(dictionary, params).detectMarkers(gray)
     return aruco.detectMarkers(gray, dictionary, parameters=params)
+
+
+def _detect_markers(gray: np.ndarray, dictionary):
+    """Detect markers, retrying with contrast enhancement / upscale if needed."""
+    corners, ids, rej = _detect_once(gray, dictionary)
+    if ids is not None and len(ids):
+        return corners, ids, rej
+
+    # Retry 1: CLAHE contrast boost (helps glare / uneven lighting).
+    try:
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        corners, ids, rej = _detect_once(clahe.apply(gray), dictionary)
+        if ids is not None and len(ids):
+            return corners, ids, rej
+    except Exception:
+        pass
+
+    # Retry 2: upscale small images (marker too few pixels to decode).
+    h, w = gray.shape[:2]
+    if max(h, w) < 2200:
+        scale = 2200 / max(h, w)
+        up = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+        c2, ids2, rej2 = _detect_once(up, dictionary)
+        if ids2 is not None and len(ids2):
+            for c in c2:  # map corners back to original resolution
+                c /= scale
+            return c2, ids2, rej2
+
+    return corners, ids, rej
 
 
 def _order_corners(c: np.ndarray) -> np.ndarray:
