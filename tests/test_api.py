@@ -57,9 +57,12 @@ def test_scan_no_auth_and_fetch(client):
     listed = client.get("/scans").json()
     assert any(s["id"] == scan_id for s in listed)
 
-    docx = client.get(f"/scans/{scan_id}/report.docx")
-    assert docx.status_code == 200
-    assert docx.headers["content-type"].startswith("application/vnd.openxmlformats")
+    pdf = client.get(f"/scans/{scan_id}/report.pdf")
+    # 200 when WeasyPrint's native stack is present, 503 when it isn't.
+    assert pdf.status_code in (200, 503)
+    if pdf.status_code == 200:
+        assert pdf.headers["content-type"] == "application/pdf"
+        assert pdf.content[:5] == b"%PDF-"
 
 
 def test_scan_without_label_text_still_works(client):

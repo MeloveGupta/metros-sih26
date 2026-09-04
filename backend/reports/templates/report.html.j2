@@ -4,130 +4,165 @@
 <meta charset="utf-8">
 <title>Metros Report {{ r.ref_no or r.report_id }}</title>
 <style>
-  :root { --ok:#137333; --flag:#b06000; --miss:#8a1c1c; --na:#5f6368; --ink:#202124; }
+  @page {
+    size: A4; margin: 18mm 16mm 20mm;
+    @bottom-center {
+      content: "Metros - decision-support - not a final legal finding - page " counter(page) " of " counter(pages);
+      font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #8a8f98;
+    }
+  }
   * { box-sizing: border-box; }
-  body { font: 12px/1.5 system-ui, Arial, sans-serif; color: var(--ink); margin: 24px; }
-  h1 { font-size: 20px; margin: 0 0 2px; }
-  h2 { font-size: 14px; border-bottom: 2px solid #ddd; padding-bottom: 3px; margin: 20px 0 8px; }
-  .banner { background: #fff4e5; border: 1px solid #e0a458; padding: 8px 10px; border-radius: 6px; margin: 10px 0; }
-  .watermark { color: #b06000; font-weight: 700; }
-  table { border-collapse: collapse; width: 100%; margin: 6px 0; }
-  th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; vertical-align: top; }
-  th { background: #f1f3f4; }
-  .s-compliant { color: var(--ok); font-weight: 600; }
-  .s-potential_non_compliance { color: var(--flag); font-weight: 600; }
-  .s-not_detected { color: var(--miss); font-weight: 600; }
-  .s-not_assessable, .s-not_applicable { color: var(--na); }
-  .muted { color: #5f6368; }
-  .kpi { display: inline-block; margin-right: 14px; }
-  .kpi b { font-size: 16px; }
-  code { background: #f1f3f4; padding: 0 3px; border-radius: 3px; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #16181d; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  .mono { font-family: "Courier New", monospace; }
+
+  /* Masthead */
+  .mast { display: flex; align-items: flex-end; justify-content: space-between;
+          border-bottom: 3px solid #16181d; padding-bottom: 8px; margin-bottom: 4px; }
+  .brand { font-size: 26pt; font-weight: 800; letter-spacing: 1px; }
+  .brand small { font-size: 8pt; font-weight: 600; color: #5f6772; letter-spacing: 2px; display: block; margin-top: 2px; }
+  .refbox { text-align: right; font-size: 8pt; color: #5f6772; }
+  .refbox b { font-size: 11pt; color: #16181d; display: block; font-family: "Courier New", monospace; }
+
+  /* Disposition banner */
+  .disp { margin: 10px 0 14px; padding: 8px 12px; border: 2px solid #16181d;
+          display: flex; justify-content: space-between; align-items: center; }
+  .disp .tag { font-size: 11pt; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; }
+  .disp .sub { font-size: 7.5pt; color: #5f6772; max-width: 58%; text-align: right; }
+
+  /* KPI strip */
+  .kpis { display: flex; border: 1.5px solid #16181d; margin: 0 0 14px; }
+  .kpi { flex: 1; padding: 8px 10px; border-right: 1.5px solid #16181d; }
+  .kpi:last-child { border-right: 0; }
+  .kpi .n { font-size: 16pt; font-weight: 800; font-family: "Courier New", monospace; line-height: 1; }
+  .kpi .l { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .5px; color: #5f6772; }
+
+  h2.sec { font-size: 10.5pt; text-transform: uppercase; letter-spacing: .5px; margin: 16px 0 6px;
+           padding-bottom: 3px; border-bottom: 1.5px solid #16181d; }
+  h2.sec span { color: #12564f; font-family: "Courier New", monospace; margin-right: 6px; }
+
+  table { border-collapse: collapse; width: 100%; margin: 4px 0; }
+  th { text-align: left; font-size: 7pt; text-transform: uppercase; letter-spacing: .4px; color: #5f6772;
+       border-bottom: 1.5px solid #16181d; padding: 5px 6px; }
+  td { padding: 6px; border-bottom: .75pt solid #d7dbe0; vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+
+  .pill { font-size: 6.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: .3px;
+          padding: 2px 6px; border: 1pt solid #16181d; white-space: nowrap; }
+  .st-compliant { background: #eaf5ee; }
+  .st-potential_non_compliance { background: #fbefdd; }
+  .st-not_detected { background: #fbe6e8; }
+  .st-not_assessable, .st-not_applicable { background: #eef0f2; color: #5f6772; }
+
+  .muted { color: #5f6772; }
+  .cal { border: 1.5px dashed #9aa0a8; padding: 8px 10px; font-size: 8.5pt; margin: 4px 0; }
+  .cal b { font-family: "Courier New", monospace; }
+  .note { font-size: 7.5pt; color: #5f6772; margin: 6px 0; }
+  .evgrid td { border: none; padding: 2px 8px 2px 0; }
 </style>
 </head>
 <body>
 
-<h1>Metros - Packaged Commodity Compliance Report</h1>
-<div class="muted">Ref {{ r.ref_no or r.report_id }} · generated {{ r.generated_at }} · app v{{ r.app_version }}
- · catalog {{ r.rule_catalog.version }}</div>
-
-<div class="banner">
-  <span class="watermark">DECISION-SUPPORT - potential non-compliance flagged for officer verification.</span>
-  Not a final legal finding. Physical verification required for enforcement.
+<div class="mast">
+  <div class="brand">METROS<small>LEGAL METROLOGY COMPLIANCE</small></div>
+  <div class="refbox">
+    Report reference<b>{{ r.ref_no or r.report_id[:8] }}</b>
+    {{ r.generated_at.strftime("%d %b %Y, %H:%M UTC") if r.generated_at.strftime else r.generated_at }}
+  </div>
 </div>
 
-<h2>1. Inspection & product</h2>
-<table>
-  <tr><th>Officer</th><td>{{ r.inspection.officer.name if r.inspection.officer else "-" }}
-      {% if r.inspection.officer %}({{ r.inspection.officer.id }}, {{ r.inspection.officer.role }}){% endif %}</td>
-      <th>Jurisdiction</th><td>{{ r.inspection.jurisdiction or "-" }}</td></tr>
-  <tr><th>Product</th><td>{{ r.product.name or "-" }}</td>
-      <th>Brand</th><td>{{ r.product.brand or "-" }}</td></tr>
-  <tr><th>Category</th><td>{{ r.product.category or "-" }}</td>
-      <th>Source</th><td>{{ r.product.source or "-" }}</td></tr>
-</table>
-
-<h2>2. Executive summary</h2>
-<div>
-  <span class="kpi">Checked <b>{{ r.summary.checked }}</b></span>
-  <span class="kpi s-compliant">Compliant <b>{{ r.summary.compliant }}</b></span>
-  <span class="kpi s-potential_non_compliance">Potential NC <b>{{ r.summary.potential_non_compliance }}</b></span>
-  <span class="kpi s-not_detected">Not detected <b>{{ r.summary.not_detected }}</b></span>
-  <span class="kpi s-not_assessable">Not assessable <b>{{ r.summary.not_assessable }}</b></span>
-  <span class="kpi">Confidence <b>{{ "%.0f%%"|format(r.summary.overall_confidence * 100) }}</b></span>
+<div class="disp">
+  <span class="tag">{{ r.disposition.value.replace("_", " ") }}</span>
+  <span class="sub">Decision-support. Potential non-compliance flagged for officer verification.
+    Not a final legal finding; physical verification required for enforcement.</span>
 </div>
-{% if r.summary.required_actions %}
-<p><b>Required officer actions:</b></p>
-<ul>{% for a in r.summary.required_actions %}<li>{{ a }}</li>{% endfor %}</ul>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">{{ r.summary.checked }}</div><div class="l">Checked</div></div>
+  <div class="kpi"><div class="n">{{ r.summary.compliant }}</div><div class="l">Compliant</div></div>
+  <div class="kpi"><div class="n">{{ r.summary.potential_non_compliance }}</div><div class="l">Potential NC</div></div>
+  <div class="kpi"><div class="n">{{ r.summary.not_detected }}</div><div class="l">Not detected</div></div>
+  <div class="kpi"><div class="n">{{ r.summary.not_assessable }}</div><div class="l">Not assessable</div></div>
+  <div class="kpi"><div class="n">{{ "%.0f%%"|format(r.summary.overall_confidence * 100) }}</div><div class="l">Confidence</div></div>
+</div>
+
+{% if r.product.name or r.product.brand %}
+<h2 class="sec"><span>·</span>Product</h2>
+<table class="evgrid">
+  <tr><td class="muted">Name</td><td>{{ r.product.name or "-" }}</td>
+      <td class="muted">Brand</td><td>{{ r.product.brand or "-" }}</td></tr>
+  <tr><td class="muted">Category</td><td>{{ r.product.category or "-" }}</td>
+      <td class="muted">Source</td><td>{{ r.product.source or "-" }}</td></tr>
+</table>
 {% endif %}
 
-<h2>3. Evidence & chain of custody</h2>
+<h2 class="sec"><span>01</span>Declarations · Rule 6</h2>
 <table>
-  <tr><th>Original file</th><td>{{ r.evidence.original.file }}</td></tr>
-  <tr><th>SHA-256</th><td><code>{{ r.evidence.original.sha256 }}</code></td></tr>
-  <tr><th>Resolution</th><td>{{ r.evidence.original.width }}×{{ r.evidence.original.height }}</td></tr>
-</table>
-<p class="muted">{{ r.evidence.integrity_note }}</p>
-
-<h2>4. Calibration & measurement basis</h2>
-<table>
-  <tr><th>Verdict</th><td class="s-{{ 'compliant' if r.calibration.verdict.value=='calibrated' else 'not_assessable' }}">
-      {{ r.calibration.verdict.value }}</td>
-      <th>Reference</th><td>{{ r.calibration.reference }}
-        {% if r.calibration.aruco_dict %}({{ r.calibration.aruco_dict }} id={{ r.calibration.marker_id }}){% endif %}</td></tr>
-  <tr><th>Marker size</th><td>{{ r.calibration.marker_mm or "-" }} mm</td>
-      <th>mm / pixel</th><td>{{ "%.5f"|format(r.calibration.mm_per_pixel) if r.calibration.mm_per_pixel else "-" }}</td></tr>
-  <tr><th>Homography residual</th><td>{{ "%.2f px"|format(r.calibration.homography_residual_px) if r.calibration.homography_residual_px is not none else "-" }}</td>
-      <th>Detection confidence</th><td>{{ r.calibration.detection_confidence if r.calibration.detection_confidence is not none else "-" }}</td></tr>
-</table>
-{% if r.calibration.verdict.value != 'calibrated' %}
-<p class="s-not_assessable">Uncalibrated: {{ r.calibration.reason }} - no millimetre verdicts are reported.</p>
-{% endif %}
-
-<h2>5. Declaration findings (Rule 6)</h2>
-<table>
-  <tr><th>Declaration</th><th>Clause</th><th>Extracted</th><th>Format</th><th>Status</th><th>Note</th></tr>
+  <thead><tr><th style="width:34%">Declaration</th><th style="width:14%">Clause</th>
+    <th style="width:33%">Extracted</th><th style="width:19%">Status</th></tr></thead>
+  <tbody>
   {% for d in r.declarations %}
-  <tr>
-    <td>{{ d.label }}</td>
-    <td>{{ d.clause_ref.clause }}{% if d.clause_ref.gazette %}<br><span class="muted">{{ d.clause_ref.gazette }}</span>{% endif %}</td>
-    <td>{{ d.extracted or "-" }}</td>
-    <td>{% if d.format_check %}{{ "pass" if d.format_check.passed else "fail" }}{% else %}-{% endif %}</td>
-    <td class="s-{{ d.status.value }}">{{ d.status.value }}</td>
-    <td class="muted">{{ d.note or "" }}</td>
-  </tr>
+    <tr>
+      <td>{{ d.label }}</td>
+      <td class="mono">{{ d.clause_ref.clause }}</td>
+      <td class="muted">{{ d.extracted or "not found on pack" }}</td>
+      <td><span class="pill st-{{ d.status.value }}">{{ d.status.value.replace("_", " ") }}</span></td>
+    </tr>
   {% endfor %}
+  </tbody>
 </table>
 
-<h2>6. Font-size & placement analysis (Rule 7)</h2>
-{% if r.font_analysis.panel_area_cm2 %}
-<p>Principal display panel area: <b>{{ "%.1f ± %.1f"|format(r.font_analysis.panel_area_cm2.value, r.font_analysis.panel_area_cm2.uncertainty) }} cm²</b>
- → band <code>{{ r.font_analysis.table_i_band.area_band }}</code>,
- minimum height <b>{{ r.font_analysis.table_i_band.min_height_mm }} mm</b>
- (molded {{ r.font_analysis.table_i_band.min_height_mm_molded }} mm).</p>
+<h2 class="sec"><span>02</span>Letter height · Rule 7</h2>
+<div class="cal">
+  <b>Calibration:</b> {{ r.calibration.verdict.value.replace("_", " ") }}
+  {% if r.calibration.mm_per_pixel %} · <b>{{ "%.5f"|format(r.calibration.mm_per_pixel) }} mm/px</b>{% endif %}
+  {% if r.calibration.reason %} · <span class="muted">{{ r.calibration.reason }}</span>{% endif %}
+</div>
+{% if r.font_analysis.panel_area_cm2 and r.font_analysis.table_i_band %}
+<p class="note">Principal display panel area
+  <b>{{ "%.1f ± %.1f"|format(r.font_analysis.panel_area_cm2.value, r.font_analysis.panel_area_cm2.uncertainty) }} cm²</b>
+  → Table-I band <b>{{ r.font_analysis.table_i_band.area_band }}</b>,
+  minimum letter height <b>{{ r.font_analysis.table_i_band.min_height_mm }} mm</b>.</p>
 {% endif %}
 {% if r.font_analysis.items %}
 <table>
-  <tr><th>Declaration</th><th>Measured height</th><th>Width ratio</th><th>Threshold</th><th>Status</th><th>Reason</th></tr>
+  <thead><tr><th>Declaration</th><th>Measured height</th><th>Threshold</th><th>Status</th><th>Reason</th></tr></thead>
+  <tbody>
   {% for i in r.font_analysis.items %}
-  <tr>
-    <td>{{ i.declaration_id }}</td>
-    <td>{% if i.height_mm %}{{ "%.2f ± %.2f mm"|format(i.height_mm.value, i.height_mm.uncertainty) }}{% else %}-{% endif %}</td>
-    <td>{{ "%.2f"|format(i.width_ratio) if i.width_ratio is not none else "-" }}</td>
-    <td>{{ "%.1f mm"|format(i.threshold_mm) if i.threshold_mm is not none else "-" }}</td>
-    <td class="s-{{ i.status.value }}">{{ i.status.value }}</td>
-    <td class="muted">{{ i.reason or "" }}</td>
-  </tr>
+    <tr>
+      <td>{{ i.declaration_id }}</td>
+      <td class="mono">{% if i.height_mm %}{{ "%.2f ± %.2f mm"|format(i.height_mm.value, i.height_mm.uncertainty) }}{% else %}-{% endif %}</td>
+      <td class="mono">{{ "%.1f mm"|format(i.threshold_mm) if i.threshold_mm is not none else "-" }}</td>
+      <td><span class="pill st-{{ i.status.value }}">{{ i.status.value.replace("_", " ") }}</span></td>
+      <td class="muted">{{ i.reason or "" }}</td>
+    </tr>
   {% endfor %}
+  </tbody>
 </table>
-{% else %}<p class="muted">No font measurements in this report.</p>{% endif %}
+{% else %}
+<p class="note">No letter-height measurement (no Metros card in frame, or uncalibrated).</p>
+{% endif %}
 
-<h2>7. Legal basis</h2>
-{% if r.legal_basis.statute %}<p><b>{{ r.legal_basis.statute }}</b></p>{% endif %}
-<p class="muted">All clauses cited above reference the Legal Metrology (Packaged Commodities)
- Rules, 2011 as amended; verify against official notifications before enforcement.</p>
+{% if r.summary.required_actions %}
+<h2 class="sec"><span>03</span>Officer actions required</h2>
+<table>
+  <tbody>
+  {% for a in r.summary.required_actions %}
+    <tr><td>{{ a }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
-<h2>8. Limitations & confidence</h2>
-<p class="muted">{{ r.limitations }}</p>
+<h2 class="sec"><span>04</span>Evidence &amp; legal basis</h2>
+<table class="evgrid">
+  <tr><td class="muted">Original file</td><td>{{ r.evidence.original.file }}</td></tr>
+  <tr><td class="muted">Resolution</td><td>{{ r.evidence.original.width }} × {{ r.evidence.original.height }} px</td></tr>
+  <tr><td class="muted">SHA-256</td><td class="mono" style="font-size:7pt;word-break:break-all">{{ r.evidence.original.sha256 }}</td></tr>
+  {% if r.legal_basis.statute %}<tr><td class="muted">Statute</td><td>{{ r.legal_basis.statute }}</td></tr>{% endif %}
+  <tr><td class="muted">Rule catalog</td><td>{{ r.rule_catalog.version }}</td></tr>
+</table>
+<p class="note">{{ r.evidence.integrity_note }}</p>
+<p class="note">{{ r.limitations }}</p>
 
 </body>
 </html>

@@ -35,7 +35,7 @@ from ..db.repository import (
     session_factory,
 )
 from ..pipeline import run_scan
-from ..reports.render import render_docx
+from ..reports.render import render_pdf
 from ..schemas.report import Inspection, Officer, Product
 from ..vision.ocr import (
     OcrResult,
@@ -151,15 +151,17 @@ def fetch_scan(scan_id: str, session=Depends(get_session)):
     return JSONResponse(content=report.model_dump(by_alias=True, mode="json"))
 
 
-@app.get("/scans/{scan_id}/report.docx")
-def download_docx(scan_id: str, session=Depends(get_session)):
+@app.get("/scans/{scan_id}/report.pdf")
+def download_pdf(scan_id: str, session=Depends(get_session)):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
-    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
-    render_docx(report, out)
-    return FileResponse(str(out), filename=f"metros-{scan_id}.docx",
-                        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.pdf"
+    try:
+        render_pdf(report, out)
+    except MetrosError as exc:
+        raise HTTPException(status_code=503, detail=f"PDF rendering unavailable: {exc}")
+    return FileResponse(str(out), filename=f"metros-{scan_id}.pdf", media_type="application/pdf")
 
 
 @app.post("/scans/{scan_id}/actions")

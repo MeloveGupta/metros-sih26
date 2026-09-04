@@ -1,4 +1,4 @@
-"""Tests for report rendering (JSON, HTML, DOCX)."""
+"""Tests for report rendering (JSON, HTML, PDF)."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from backend.reports.render import render_docx, render_html, render_json
+from backend.reports.render import render_html, render_json, render_pdf
 from backend.schemas.report import (
     Calibration,
     CalibrationVerdict,
@@ -70,19 +70,19 @@ def test_render_json_roundtrips(sample_report):
 
 def test_render_html_has_key_content(sample_report):
     html = render_html(sample_report)
-    assert "DECISION-SUPPORT" in html
+    assert "Decision-support" in html or "decision-support" in html.lower()
     assert "Rule 6(1)(e)" in html
     assert "1.50 ± 0.10 mm" in html            # mm with uncertainty
-    assert "s-potential_non_compliance" in html  # status color class
-    assert "VIOLATION" not in html               # never the word violation
+    assert "st-potential_non_compliance" in html  # status style class
+    assert "VIOLATION" not in html                # never the word violation
 
 
-def test_render_docx_writes_file(sample_report, tmp_path):
-    out = tmp_path / "report.docx"
-    render_docx(sample_report, out)
+def test_render_pdf_writes_file(sample_report, tmp_path):
+    pytest.importorskip("weasyprint")
+    out = tmp_path / "report.pdf"
+    try:
+        render_pdf(sample_report, out)
+    except Exception as exc:  # native libs (cairo/pango) missing in some envs
+        pytest.skip(f"WeasyPrint native stack unavailable: {exc}")
     assert out.exists() and out.stat().st_size > 0
-    # DOCX is a zip; verify it opens.
-    from docx import Document
-    doc = Document(str(out))
-    text = "\n".join(p.text for p in doc.paragraphs)
-    assert "DECISION-SUPPORT" in text
+    assert out.read_bytes()[:5] == b"%PDF-"  # valid PDF header

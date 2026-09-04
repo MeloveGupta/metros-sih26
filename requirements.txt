@@ -25,7 +25,6 @@ PyYAML>=6.0
 
 # --- Reports ---
 weasyprint>=63          # PDF; needs native cairo/pango at runtime (optional)
-python-docx>=1.1
 Jinja2>=3.1
 
 # --- DB ---

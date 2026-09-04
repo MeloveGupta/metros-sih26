@@ -19,7 +19,7 @@ import cv2
 
 from .core.errors import MetrosError
 from .pipeline import run_scan
-from .reports.render import render_docx, render_html, render_json
+from .reports.render import render_html, render_json, render_pdf
 from .schemas.report import Product, Status
 from .vision.ocr import ocr_from_text, paddle_ocr, tesseract_available, tesseract_ocr
 
@@ -96,8 +96,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         stem = report.report_id[:8]
         (out / f"{stem}.json").write_text(render_json(report), encoding="utf-8")
         (out / f"{stem}.html").write_text(render_html(report), encoding="utf-8")
-        render_docx(report, out / f"{stem}.docx")
-        print(f"\nwrote {stem}.json / .html / .docx to {out}/")
+        render_pdf(report, out / f"{stem}.pdf")
+        print(f"\nwrote {stem}.json / .html / .pdf to {out}/")
     return 0
 
 
@@ -119,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--llm", action="store_true",
                       help="use the Claude extraction fast-path (needs `ant auth login`)")
     scan.add_argument("--product", help="product name")
-    scan.add_argument("--out-dir", help="write JSON/HTML/DOCX report here")
+    scan.add_argument("--out-dir", help="write JSON/HTML/PDF report here")
     scan.set_defaults(func=_cmd_scan)
     return ap
 

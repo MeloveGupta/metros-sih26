@@ -19,6 +19,6 @@ export async function listScans() {
   return res.json();
 }
 
-export function docxUrl(reportId) {
-  return `/scans/${reportId}/report.docx`;
+export function pdfUrl(reportId) {
+  return `/scans/${reportId}/report.pdf`;
 }

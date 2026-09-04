@@ -1,5 +1,5 @@
 import React from "react";
-import { docxUrl } from "./api.js";
+import { pdfUrl } from "./api.js";
 
 function Pill({ status }) {
   return <span className={`pill s-${status}`}>{status.replace(/_/g, " ")}</span>;
@@ -129,7 +129,7 @@ export default function ReportView({ report }) {
         </>
       )}
 
-      <a className="dl" href={docxUrl(report.report_id)}>Download editable report (DOCX)</a>
+      <a className="dl" href={pdfUrl(report.report_id)} target="_blank" rel="noreferrer">Download PDF report</a>
     </section>
   );
 }
