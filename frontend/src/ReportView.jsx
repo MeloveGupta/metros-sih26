@@ -32,10 +32,10 @@ function Gauge({ item }) {
   );
 }
 
-// Items needing officer attention: flagged declarations + missing ones.
+// Items needing officer attention: only the flagged (potential non-compliance) ones.
 function itemsNeedingReview(report) {
   return report.declarations
-    .filter((d) => ["potential_non_compliance", "not_detected"].includes(d.status))
+    .filter((d) => d.status === "potential_non_compliance")
     .map((d) => ({ id: d.id, label: d.label, status: d.status }));
 }
 

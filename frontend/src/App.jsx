@@ -41,7 +41,6 @@ function ScanForm({ onReport }) {
   return (
     <form className="panel" onSubmit={submit}>
       <div className="panel-head">
-        <span className="eyebrow">Capture</span>
         <h2>Scan a packaged product</h2>
         <p className="lede">
           Add the front and back of the pack, plus any close-ups of the label. More
