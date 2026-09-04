@@ -4,7 +4,7 @@ Dev + data-capture helpers.
 
 ## gen_calibration_card.py — printable ArUco scale reference
 
-Generates the MetroScan **calibration card**: an A4 sheet with a centred
+Generates the Metros **calibration card**: an A4 sheet with a centred
 ID-1 / CR80 (85.60 x 53.98 mm) card outline and a known-size ArUco marker. Print
 at 100%, cut out, and place it in the same plane as a product declaration so the
 vision pipeline can recover `mm_per_pixel` (and a homography for perspective) —

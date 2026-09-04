@@ -8,25 +8,36 @@ export default function CameraCapture({ onCapture }) {
   const [on, setOn] = useState(false);
   const [err, setErr] = useState("");
 
+  // Attach the stream AFTER the <video> element is mounted (on === true).
+  // Setting srcObject inside start() fails because the element isn't rendered
+  // yet, which is what produced the black screen.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (on && v && streamRef.current) {
+      v.srcObject = streamRef.current;
+      v.play().catch(() => {});
+    }
+  }, [on]);
+
   async function start() {
     setErr("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      streamRef.current = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 } },
         audio: false,
       });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setOn(true);
+      setOn(true); // mounts <video>; the effect above attaches the stream
     } catch (e) {
       setErr(
-        "Camera unavailable — " +
+        "Camera unavailable - " +
           (e && e.name === "NotAllowedError"
             ? "permission denied. Allow camera access, or use file upload."
-            : String(e.message || e))
+            : e && e.name === "NotFoundError"
+            ? "no camera found on this device."
+            : String((e && e.message) || e)) +
+          (location.protocol !== "https:" && location.hostname !== "localhost"
+            ? " (camera needs HTTPS or localhost.)"
+            : "")
       );
     }
   }
@@ -36,6 +47,7 @@ export default function CameraCapture({ onCapture }) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) videoRef.current.srcObject = null;
     setOn(false);
   }
 
@@ -49,8 +61,7 @@ export default function CameraCapture({ onCapture }) {
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
-        const file = new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" });
-        onCapture(file);
+        onCapture(new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" }));
         stop();
       },
       "image/jpeg",
@@ -66,7 +77,7 @@ export default function CameraCapture({ onCapture }) {
       {on ? (
         <>
           <div className="viewfinder">
-            <video ref={videoRef} playsInline muted />
+            <video ref={videoRef} autoPlay playsInline muted />
             <div className="guide">Frame the product + the ArUco card, both flat</div>
           </div>
           <div className="camrow">

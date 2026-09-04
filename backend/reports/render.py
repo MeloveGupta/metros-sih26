@@ -14,7 +14,7 @@ from typing import Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..core.config import get_settings
-from ..core.errors import MetroScanError
+from ..core.errors import MetrosError
 from ..schemas.report import Report
 
 _STATUS_LABEL = {
@@ -50,7 +50,7 @@ def render_pdf(report: Report, out_path: Path, template_dir: Optional[Path] = No
     try:
         from weasyprint import HTML  # heavy native deps; import lazily
     except Exception as exc:  # ImportError or native lib load failure
-        raise MetroScanError(
+        raise MetrosError(
             "PDF rendering requires WeasyPrint and its native libraries "
             "(cairo, pango). Install per requirements.txt, or use render_docx/"
             f"render_html. Underlying error: {exc}"
@@ -69,14 +69,14 @@ def render_docx(report: Report, out_path: Path) -> Path:
     from docx.shared import Pt
 
     doc = Document()
-    doc.add_heading("MetroScan — Packaged Commodity Compliance Report", level=0)
+    doc.add_heading("Metros - Packaged Commodity Compliance Report", level=0)
     doc.add_paragraph(
         f"Ref {report.ref_no or report.report_id} · generated {report.generated_at} · "
         f"app v{report.app_version} · catalog {report.rule_catalog.version}"
     )
     warn = doc.add_paragraph()
     run = warn.add_run(
-        "DECISION-SUPPORT — potential non-compliance flagged for officer "
+        "DECISION-SUPPORT - potential non-compliance flagged for officer "
         "verification. Not a final legal finding. Physical verification required "
         "for enforcement."
     )
@@ -84,10 +84,10 @@ def render_docx(report: Report, out_path: Path) -> Path:
 
     doc.add_heading("1. Inspection & product", level=1)
     officer = report.inspection.officer
-    doc.add_paragraph(f"Officer: {officer.name if officer else '—'}")
-    doc.add_paragraph(f"Jurisdiction: {report.inspection.jurisdiction or '—'}")
-    doc.add_paragraph(f"Product: {report.product.name or '—'} "
-                      f"({report.product.brand or '—'}, {report.product.category or '—'})")
+    doc.add_paragraph(f"Officer: {officer.name if officer else '-'}")
+    doc.add_paragraph(f"Jurisdiction: {report.inspection.jurisdiction or '-'}")
+    doc.add_paragraph(f"Product: {report.product.name or '-'} "
+                      f"({report.product.brand or '-'}, {report.product.category or '-'})")
 
     doc.add_heading("2. Executive summary", level=1)
     s = report.summary
@@ -116,7 +116,7 @@ def render_docx(report: Report, out_path: Path) -> Path:
         doc.add_paragraph(f"mm/pixel: {c.mm_per_pixel:.5f} · residual "
                           f"{c.homography_residual_px:.2f}px")
     if c.verdict.value != "calibrated":
-        doc.add_paragraph(f"Uncalibrated: {c.reason} — no millimetre verdicts reported.")
+        doc.add_paragraph(f"Uncalibrated: {c.reason} - no millimetre verdicts reported.")
 
     doc.add_heading("5. Declaration findings (Rule 6)", level=1)
     t = doc.add_table(rows=1, cols=5)
@@ -128,7 +128,7 @@ def render_docx(report: Report, out_path: Path) -> Path:
         row = t.add_row().cells
         row[0].text = d.label
         row[1].text = d.clause_ref.clause
-        row[2].text = d.extracted or "—"
+        row[2].text = d.extracted or "-"
         row[3].text = _STATUS_LABEL.get(d.status.value, d.status.value)
         row[4].text = d.note or ""
 
@@ -149,8 +149,8 @@ def render_docx(report: Report, out_path: Path) -> Path:
             row = ft.add_row().cells
             row[0].text = it.declaration_id
             row[1].text = (f"{it.height_mm.value:.2f} ± {it.height_mm.uncertainty:.2f} mm"
-                           if it.height_mm else "—")
-            row[2].text = f"{it.threshold_mm:.1f} mm" if it.threshold_mm is not None else "—"
+                           if it.height_mm else "-")
+            row[2].text = f"{it.threshold_mm:.1f} mm" if it.threshold_mm is not None else "-"
             row[3].text = _STATUS_LABEL.get(it.status.value, it.status.value)
             row[4].text = it.reason or ""
 

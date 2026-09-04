@@ -1,4 +1,4 @@
-# SIH26034 — Legal Metrology Compliance Scanner (MetroScan)
+# SIH26034 — Legal Metrology Compliance Scanner (Metros)
 
 Scan a packaged-commodity label and auto-check it against the **Legal Metrology
 (Packaged Commodities) Rules, 2011**. Measures declaration font height in real
@@ -74,7 +74,7 @@ docker compose up --build     # api + frontend + postgres + minio
 ## The moat — Rule 7 in millimetres
 
 Letter-height compliance keys off the **area of the principal display panel
-(cm²)** (Table-I, GSR 629(E), w.e.f. 01-01-2018). MetroScan recovers scale from a
+(cm²)** (Table-I, GSR 629(E), w.e.f. 01-01-2018). Metros recovers scale from a
 printed ArUco card, measures panel area **and** glyph height in mm (each with an
 uncertainty), and flags heights below the band minimum. No calibration marker ⇒
 no millimetre verdict. See [`docs/architecture.md`](docs/architecture.md).

@@ -5,7 +5,7 @@ function StatusPill({ status }) {
 }
 
 function mm(m) {
-  return m ? `${m.value.toFixed(2)} ± ${m.uncertainty.toFixed(2)} ${m.unit}` : "—";
+  return m ? `${m.value.toFixed(2)} ± ${m.uncertainty.toFixed(2)} ${m.unit}` : "-";
 }
 
 export default function ReportView({ report }) {
@@ -17,7 +17,7 @@ export default function ReportView({ report }) {
       <h2>Report {report.ref_no || report.report_id.slice(0, 8)}</h2>
 
       <div className="banner">
-        DECISION-SUPPORT — potential non-compliance flagged for officer verification.
+        DECISION-SUPPORT - potential non-compliance flagged for officer verification.
         Not a final legal finding.
       </div>
 
@@ -46,7 +46,7 @@ export default function ReportView({ report }) {
             <tr key={d.id}>
               <td>{d.label}</td>
               <td>{d.clause_ref.clause}</td>
-              <td>{d.extracted || "—"}</td>
+              <td>{d.extracted || "-"}</td>
               <td><StatusPill status={d.status} /></td>
             </tr>
           ))}
@@ -69,7 +69,7 @@ export default function ReportView({ report }) {
               <tr key={i.declaration_id}>
                 <td>{i.declaration_id}</td>
                 <td>{mm(i.height_mm)}</td>
-                <td>{i.threshold_mm != null ? `${i.threshold_mm.toFixed(1)} mm` : "—"}</td>
+                <td>{i.threshold_mm != null ? `${i.threshold_mm.toFixed(1)} mm` : "-"}</td>
                 <td><StatusPill status={i.status} /></td>
                 <td className="muted">{i.reason || ""}</td>
               </tr>

@@ -7,11 +7,11 @@ surface the right message to an officer.
 from __future__ import annotations
 
 
-class MetroScanError(Exception):
+class MetrosError(Exception):
     """Base class for all MetroScan errors."""
 
 
-class CalibrationError(MetroScanError):
+class CalibrationError(MetrosError):
     """Scale reference could not be recovered from the image.
 
     Raised when no calibration marker is found, or when its geometry is too
@@ -20,17 +20,17 @@ class CalibrationError(MetroScanError):
     """
 
 
-class MeasurementError(MetroScanError):
+class MeasurementError(MetrosError):
     """A geometric measurement could not be completed."""
 
 
-class OcrError(MetroScanError):
+class OcrError(MetrosError):
     """The OCR backend failed or is unavailable."""
 
 
-class RuleCatalogError(MetroScanError):
+class RuleCatalogError(MetrosError):
     """The YAML rule catalog is missing, malformed, or internally inconsistent."""
 
 
-class ExtractionError(MetroScanError):
+class ExtractionError(MetrosError):
     """A declaration field could not be parsed from OCR text."""

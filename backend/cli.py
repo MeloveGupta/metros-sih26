@@ -17,7 +17,7 @@ from typing import List, Optional
 
 import cv2
 
-from .core.errors import MetroScanError
+from .core.errors import MetrosError
 from .pipeline import run_scan
 from .reports.render import render_docx, render_html, render_json
 from .schemas.report import Product, Status
@@ -33,7 +33,7 @@ _STATUS_MARK = {
 
 
 def _print_summary(report) -> None:
-    print(f"\nMetroScan report {report.ref_no or report.report_id}")
+    print(f"\nMetros report {report.ref_no or report.report_id}")
     print(f"  calibration : {report.calibration.verdict.value}"
           + (f" ({report.calibration.mm_per_pixel:.5f} mm/px)"
              if report.calibration.mm_per_pixel else ""))
@@ -71,7 +71,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     else:
         try:
             ocr = paddle_ocr(image)
-        except MetroScanError as exc:
+        except MetrosError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
@@ -100,7 +100,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="metroscan", description=__doc__,
+    ap = argparse.ArgumentParser(prog="metros", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
     scan = sub.add_parser("scan", help="scan one product image")

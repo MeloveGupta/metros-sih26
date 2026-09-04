@@ -1,8 +1,8 @@
-# Legal Metrology (Packaged Commodities) Rules, 2011 — rule catalog.
+# Legal Metrology (Packaged Commodities) Rules, 2011 - rule catalog.
 # Data, not code: an officer amends thresholds here without a redeploy.
 # Each declaration maps to a clause; the engine cites `clause` in every verdict.
 #
-# Source: official consolidated book (all amendments) — docs/lmpc-2011.pdf,
+# Source: official consolidated book (all amendments) - docs/lmpc-2011.pdf,
 # Dept of Consumer Affairs. Values below reflect amendments in force,
 # principally GSR 629(E) dated 23-06-2017 (w.e.f. 01-01-2018), which replaced
 # the net-quantity font bands with area-of-panel bands.
@@ -68,7 +68,7 @@ declarations:
     checks: [present_if_perishable, month_year_format]
 
   - id: mrp
-    label: Retail sale price — MRP inclusive of all taxes, Indian currency
+    label: Retail sale price - MRP inclusive of all taxes, Indian currency
     clause: "Rule 6(1)(e)"
     checks: [present, mrp_format]
     # Accepted formats (Rule 6 illustrations), rounded to nearest rupee / 50 paise:
@@ -78,15 +78,15 @@ declarations:
     #   "MRP Rs./₹ xx.xx (incl. of all taxes)"
 
   - id: consumer_care
-    label: Consumer-care — name, address, telephone, e-mail for complaints
+    label: Consumer-care - name, address, telephone, e-mail for complaints
     clause: "Rule 6(2)"
     checks: [present, contact_format]
 
-# --- Rule 7: principal display panel — letter/numeral height (in mm) ---
+# --- Rule 7: principal display panel - letter/numeral height (in mm) ---
 # Height depends on the AREA of the principal display panel in cm^2
 # (Table-I as substituted by GSR 629(E), w.e.f. 01-01-2018), NOT on net weight.
 # The pipeline must therefore measure BOTH the panel area (cm^2) and the glyph
-# height (mm) from the image via the ArUco scale — see docs/architecture.md.
+# height (mm) from the image via the ArUco scale - see docs/architecture.md.
 font_height_mm:
   clause: "Rule 7(2), Table-I"
   gazette: "GSR 629(E), 23-06-2017"

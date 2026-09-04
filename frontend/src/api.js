@@ -1,4 +1,4 @@
-// Thin API client for the MetroScan backend.
+// Thin API client for the Metros backend.
 
 const TOKEN_KEY = "metroscan_token";
 

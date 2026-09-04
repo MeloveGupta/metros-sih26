@@ -1,6 +1,6 @@
 # frontend
 
-React + Vite dashboard for MetroScan: officer sign-in, product scan (image +
+React + Vite dashboard for Metros: officer sign-in, product scan (image +
 optional label text + marker size), and a report view with per-declaration
 statuses, Rule 7 font measurements (mm ± uncertainty), calibration verdict, and
 a DOCX download.

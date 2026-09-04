@@ -1,4 +1,4 @@
-"""MetroScan HTTP API (FastAPI).
+"""Metros HTTP API (FastAPI).
 
 Endpoints:
   POST /auth/token           login -> JWT
@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from ..core.config import get_settings
-from ..core.errors import MetroScanError
+from ..core.errors import MetrosError
 from ..db.repository import (
     append_audit,
     get_report,
@@ -47,7 +47,7 @@ from .security import (
     verify_password,
 )
 
-app = FastAPI(title="MetroScan API", version="0.1.0")
+app = FastAPI(title="Metros API", version="0.1.0")
 oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 _engine = make_engine()
@@ -114,17 +114,17 @@ async def scan(
 ):
     img = _decode_image(await image.read())
 
-    # OCR: PaddleOCR if available, else the provided label text.
+    # OCR: provided label text -> PaddleOCR (if installed) -> empty text.
+    # Empty text still yields a valid report: calibration + Rule 7 font
+    # measurement run, and Rule 6 declarations come back as not_detected. It
+    # never hard-fails a camera scan just because OCR isn't installed.
     if label_text:
         ocr: OcrResult = ocr_from_text(label_text)
     else:
         try:
             ocr = paddle_ocr(img)
-        except MetroScanError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"OCR unavailable and no label_text provided: {exc}",
-            )
+        except MetrosError:
+            ocr = ocr_from_text("")
 
     product = Product(name=product_name, brand=brand, category=category, source=source)
     inspection = Inspection(officer=Officer(id=user["sub"] or "unknown", name=user["sub"] or "officer",
@@ -170,9 +170,9 @@ def download_docx(scan_id: str,
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
-    out = Path(tempfile.gettempdir()) / f"metroscan-{scan_id}.docx"
+    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
     render_docx(report, out)
-    return FileResponse(str(out), filename=f"metroscan-{scan_id}.docx",
+    return FileResponse(str(out), filename=f"metros-{scan_id}.docx",
                         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 

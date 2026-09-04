@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a printable ArUco calibration card for MetroScan (SIH26034).
+"""Generate a printable ArUco calibration card for Metros (SIH26034).
 
 The card is an ID-1 / CR80 rectangle (85.60 x 53.98 mm, ISO/IEC 7810) carrying a
 single ArUco marker of a known, printed side length. Placed in the same plane as
@@ -107,7 +107,7 @@ def build_card(dpi: int, marker_mm: float, dict_name: str, marker_id: int) -> np
     line_h = mm_to_px(7, dpi)
     scale = dpi / 300.0  # keep text legible across DPIs
     lines = [
-        "MetroScan calibration card",
+        "Metros calibration card",
         f"{dict_name}  id={marker_id}",
         f"marker side = {marker_mm:.1f} mm",
         "Print at 100% (actual size).",

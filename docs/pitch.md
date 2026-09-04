@@ -4,7 +4,7 @@ Everything needed to build the Smart India Hackathon idea-submission PPT.
 Grounded in the actual Legal Metrology (Packaged Commodities) Rules, 2011
 (`docs/lmpc-2011.pdf`) — every threshold below is real, not invented.
 
-> **Product name (working):** **MetroScan** — millimetre-grade Legal Metrology
+> **Product name (working):** **Metros** — millimetre-grade Legal Metrology
 > compliance scanner. *(swap if the team prefers another name)*
 
 ---
@@ -12,7 +12,7 @@ Grounded in the actual Legal Metrology (Packaged Commodities) Rules, 2011
 ## 0. The 15-second version
 
 > **Not another OCR app — a calibrated measuring instrument.**
-> Photograph a packaged product; MetroScan measures each mandatory declaration
+> Photograph a packaged product; Metros measures each mandatory declaration
 > to the **millimetre (with a stated uncertainty)**, checks it against the Legal
 > Metrology (Packaged Commodities) Rules, 2011, and produces a **clause-cited,
 > evidence-backed record of *potential* non-compliance — flagged for officer

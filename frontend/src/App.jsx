@@ -15,7 +15,7 @@ function Login({ onLogin }) {
       await login(email, password);
       onLogin();
     } catch {
-      setErr("Login failed — check email and password.");
+      setErr("Login failed - check email and password.");
     }
   }
 
@@ -34,7 +34,6 @@ function Login({ onLogin }) {
 function ScanForm({ onReport }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [labelText, setLabelText] = useState("");
   const [markerMm, setMarkerMm] = useState("40");
   const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -53,7 +52,7 @@ function ScanForm({ onReport }) {
     setBusy(true);
     setErr("");
     try {
-      const report = await scan({ file, labelText, markerMm, productName });
+      const report = await scan({ file, markerMm, productName });
       onReport(report);
     } catch (e2) {
       setErr(String(e2.message || e2));
@@ -86,10 +85,6 @@ function ScanForm({ onReport }) {
         <input value={markerMm} onChange={(e) => setMarkerMm(e.target.value)} /></label>
       <label>Product name (optional)
         <input value={productName} onChange={(e) => setProductName(e.target.value)} /></label>
-      <label>Label text (optional — paste if OCR/LLM not enabled)
-        <textarea rows={4} value={labelText}
-          onChange={(e) => setLabelText(e.target.value)}
-          placeholder="MRP Rs. 45.00 (incl. of all taxes)&#10;Net Qty 90 g&#10;Mfg Aug 2026" /></label>
       <button type="submit" disabled={busy}>{busy ? "Scanning…" : "Scan"}</button>
       {err && <p className="err">{err}</p>}
     </form>
@@ -103,8 +98,8 @@ export default function App() {
   return (
     <div className="wrap">
       <header>
-        <h1>MetroScan</h1>
-        <span className="tag">Legal Metrology (Packaged Commodities) Rules, 2011 — decision-support</span>
+        <h1>Metros</h1>
+        <span className="tag">Legal Metrology (Packaged Commodities) Rules, 2011 - decision-support</span>
         {authed && (
           <button className="linkish" onClick={() => { logout(); setAuthed(false); setReport(null); }}>
             Sign out
@@ -122,7 +117,7 @@ export default function App() {
       )}
 
       <footer>
-        Reports flag <b>potential</b> non-compliance for officer verification — not a
+        Reports flag <b>potential</b> non-compliance for officer verification - not a
         final legal finding. Physical verification required for enforcement.
       </footer>
     </div>
