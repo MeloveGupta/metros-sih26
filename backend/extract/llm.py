@@ -184,9 +184,20 @@ def extract_fields_llm(
     return _parse_response(_create(client, model, prompt), declaration_ids)
 
 
-def _encode_jpeg(image) -> str:
+def _encode_jpeg(image, max_side: int = 1568) -> str:
+    """Downscale to <= max_side on the long edge, then JPEG-encode to base64.
+
+    Phone photos are 3000-4000px; the model reads labels fine at ~1568px and the
+    upload is several times smaller and faster.
+    """
     import cv2
-    ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    h, w = image.shape[:2]
+    longest = max(h, w)
+    if longest > max_side:
+        scale = max_side / longest
+        image = cv2.resize(image, (int(w * scale), int(h * scale)),
+                           interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
     if not ok:
         raise ExtractionError("could not encode image for the vision model")
     return base64.b64encode(buf.tobytes()).decode("ascii")

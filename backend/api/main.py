@@ -106,10 +106,16 @@ async def scan(
         )
 
     decoded = [_decode_image(await f.read()) for f in images]
-    # OCR each image (front + back). Text is combined for regex; the images
-    # themselves feed the Claude vision path when a credential is present.
-    ocrs = [_ocr_image(img, label_text if i == 0 else None)
-            for i, img in enumerate(decoded)]
+
+    # OCR is only needed when the LLM vision path is NOT used (it reads images
+    # directly). Skipping Tesseract when AI is on removes N slow OCR passes.
+    from ..extract.llm import llm_available
+    use_llm = llm is not False and llm_available()
+    if use_llm and not label_text:
+        ocrs = [ocr_from_text("") for _ in decoded]
+    else:
+        ocrs = [_ocr_image(img, label_text if i == 0 else None)
+                for i, img in enumerate(decoded)]
 
     product = Product(name=product_name, brand=brand, category=category, source=source)
     inspection = Inspection(officer=Officer(id=user["sub"], name=user["sub"],
