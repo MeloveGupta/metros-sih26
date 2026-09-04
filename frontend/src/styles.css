@@ -141,6 +141,15 @@ button { font: inherit; }
 .preview img { width: 100%; border: var(--bd) solid var(--ink); display: block; }
 .preview figcaption { font-size: var(--t-label); font-weight: 600; color: var(--sub); margin-top: 8px; }
 
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin: 16px 0 0; }
+.shot { position: relative; margin: 0; }
+.shot img { width: 100%; aspect-ratio: 1; object-fit: cover; border: var(--bd) solid var(--ink); display: block; }
+.shot-x {
+  position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; line-height: 1;
+  font-size: 18px; font-weight: 800; background: var(--ink); color: var(--card);
+  border: var(--bd) solid var(--card); box-shadow: 0 0 0 2px var(--ink); cursor: pointer; padding: 0;
+}
+
 /* ---- Report ---- */
 .report-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .report-head h2 { letter-spacing: -0.01em; }

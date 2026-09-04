@@ -40,7 +40,7 @@ def test_health(client):
 def test_scan_no_auth_and_fetch(client):
     r = client.post(
         "/scan",
-        files={"image": ("chips.png", _marker_png(), "image/png")},
+        files={"images": ("chips.png", _marker_png(), "image/png")},
         data={"label_text": "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g",
               "marker_mm": "40", "product_name": "Masala Chips"},
     )
@@ -64,8 +64,22 @@ def test_scan_no_auth_and_fetch(client):
 def test_scan_without_label_text_still_works(client):
     r = client.post(
         "/scan",
-        files={"image": ("p.png", _marker_png(), "image/png")},
+        files={"images": ("p.png", _marker_png(), "image/png")},
         data={"marker_mm": "40"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["calibration"]["verdict"] == "calibrated"
+
+
+def test_scan_multiple_images(client):
+    # front + back: two files under the same "images" field.
+    r = client.post(
+        "/scan",
+        files=[
+            ("images", ("front.png", _marker_png(), "image/png")),
+            ("images", ("back.png", _marker_png(marker_id=0), "image/png")),
+        ],
+        data={"label_text": "MRP Rs. 30.00 (incl. of all taxes)", "marker_mm": "40"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["calibration"]["verdict"] == "calibrated"
@@ -74,7 +88,7 @@ def test_scan_without_label_text_still_works(client):
 def test_override_requires_reason(client):
     scan_id = client.post(
         "/scan",
-        files={"image": ("a.png", _marker_png(), "image/png")},
+        files={"images": ("a.png", _marker_png(), "image/png")},
         data={"label_text": "MRP Rs. 10", "marker_mm": "40"},
     ).json()["report_id"]
 

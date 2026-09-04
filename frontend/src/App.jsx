@@ -4,26 +4,34 @@ import ReportView from "./ReportView.jsx";
 import CameraCapture from "./CameraCapture.jsx";
 
 function ScanForm({ onReport }) {
-  const [file, setFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [shots, setShots] = useState([]); // [{file, url}]
   const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  function pick(f) {
-    setFile(f);
+  function addFiles(fileList) {
+    const arr = Array.from(fileList || []).filter(Boolean);
+    if (!arr.length) return;
     setErr("");
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(f ? URL.createObjectURL(f) : "");
+    setShots((prev) => [...prev, ...arr.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
+  }
+
+  function removeShot(i) {
+    setShots((prev) => {
+      const next = [...prev];
+      const [gone] = next.splice(i, 1);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return next;
+    });
   }
 
   async function submit(e) {
     e.preventDefault();
-    if (!file) return setErr("Capture or choose a product photo first.");
+    if (!shots.length) return setErr("Add at least one product photo (front and back work best).");
     setBusy(true);
     setErr("");
     try {
-      onReport(await scan({ file, productName }));
+      onReport(await scan({ files: shots.map((s) => s.file), productName }));
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -37,23 +45,29 @@ function ScanForm({ onReport }) {
         <span className="eyebrow">Capture</span>
         <h2>Scan a packaged product</h2>
         <p className="lede">
-          Keep the printed ArUco card flat, in the same plane as the label. It sets
-          the millimetre scale - no card in frame, no letter-height verdict.
+          Upload or shoot the front and back of the pack. More angles let the
+          reader find every declaration. Include the printed ArUco card in a shot
+          to also measure letter height in millimetres (Rule 7) - optional.
         </p>
       </div>
 
-      <CameraCapture onCapture={pick} />
+      <CameraCapture onCapture={(f) => addFiles([f])} />
       <label className="field file">
-        <span>…or choose / take a photo</span>
-        <input type="file" accept="image/*" capture="environment"
-          onChange={(e) => pick(e.target.files[0] || null)} />
+        <span>…or choose photos (front + back)</span>
+        <input type="file" accept="image/*" capture="environment" multiple
+          onChange={(e) => addFiles(e.target.files)} />
       </label>
 
-      {previewUrl && (
-        <figure className="preview">
-          <img src={previewUrl} alt="Captured product" />
-          <figcaption>{file?.name}</figcaption>
-        </figure>
+      {shots.length > 0 && (
+        <div className="shots">
+          {shots.map((s, i) => (
+            <figure className="shot" key={s.url}>
+              <img src={s.url} alt={`Photo ${i + 1}`} />
+              <button type="button" className="shot-x" onClick={() => removeShot(i)}
+                aria-label={`Remove photo ${i + 1}`}>×</button>
+            </figure>
+          ))}
+        </div>
       )}
 
       <label className="field">
@@ -63,7 +77,7 @@ function ScanForm({ onReport }) {
       </label>
 
       <button className="cta" type="submit" disabled={busy}>
-        {busy ? "Measuring…" : "Scan & measure"}
+        {busy ? "Analysing…" : `Scan ${shots.length || ""} photo${shots.length === 1 ? "" : "s"}`.trim()}
       </button>
       {err && <p className="err" role="alert">{err}</p>}
     </form>

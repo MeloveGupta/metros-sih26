@@ -134,8 +134,8 @@ def _overall_disposition(declarations, font_items) -> Status:
 
 
 def run_scan(
-    image: np.ndarray,
-    ocr: OcrResult,
+    images,
+    ocrs,
     *,
     marker_mm: Optional[float] = None,
     dict_name: str = "DICT_4X4_50",
@@ -150,23 +150,44 @@ def run_scan(
     catalog: Optional[RuleCatalog] = None,
     extract_backend: str = "regex",
 ) -> Report:
-    """Run the full pipeline and return a canonical Report."""
+    """Run the full pipeline over one or more images (e.g. front + back).
+
+    `images`/`ocrs` accept a single item or a list. The calibration card is
+    optional: measurement (Rule 7) runs on whichever image contains a marker; if
+    none do, Rule 7 is reported not_assessable and Rule 6 is still assessed.
+    """
     settings = get_settings()
     marker_mm = marker_mm if marker_mm is not None else settings.marker_size_mm
     catalog = catalog or load_catalog()
 
-    # 1. Scale.
-    cal = detect_scale(image, marker_mm=marker_mm, dict_name=dict_name,
-                       marker_id=marker_id,
-                       max_residual_px=settings.max_homography_residual_px)
+    if not isinstance(images, (list, tuple)):
+        images = [images]
+    if not isinstance(ocrs, (list, tuple)):
+        ocrs = [ocrs]
 
-    # 2. Extraction + bbox attachment. The image enables the LLM vision path
-    #    (read the label straight from the photo when no OCR text is available).
-    fields = extract_declarations(ocr.text, catalog, backend=extract_backend,
-                                  image=image)
-    _attach_bboxes(fields, ocr.tokens)
+    # 1. Scale: use the first image that yields a valid calibration.
+    cal = None
+    cal_idx = 0
+    for i, img in enumerate(images):
+        c = detect_scale(img, marker_mm=marker_mm, dict_name=dict_name,
+                         marker_id=marker_id,
+                         max_residual_px=settings.max_homography_residual_px)
+        if c.calibrated:
+            cal, cal_idx = c, i
+            break
+        if cal is None:
+            cal = c  # remember an uncalibrated result as the fallback
+    marker_image = images[cal_idx]
 
-    # 3. Metric font inputs.
+    # 2. Extraction over ALL images (vision) or combined OCR text (regex).
+    combined_text = "\n".join(o.text for o in ocrs if o and o.text)
+    fields = extract_declarations(combined_text, catalog, backend=extract_backend,
+                                  images=list(images))
+    # Font measurement needs boxes from the marker image's OCR.
+    if cal_idx < len(ocrs) and ocrs[cal_idx]:
+        _attach_bboxes(fields, ocrs[cal_idx].tokens)
+
+    # 3. Metric font inputs (only meaningful when calibrated).
     font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
                                      panel_area_cm2_known=panel_area_cm2)
 
@@ -175,8 +196,9 @@ def run_scan(
         catalog, fields, font_inputs, calibrated=cal.calibrated
     )
 
-    # 5. Assemble report.
-    h, w = image.shape[:2]
+    # 5. Assemble report (evidence from the first image; note total count).
+    primary = images[0]
+    h, w = primary.shape[:2]
     report = Report(
         report_id=str(uuid.uuid4()),
         generated_at=datetime.now(timezone.utc),
@@ -186,7 +208,7 @@ def run_scan(
         inspection=inspection or Inspection(),
         product=product or Product(),
         evidence=Evidence(original=OriginalImage(
-            file=image_file, sha256=_sha256_of_image(image),
+            file=image_file, sha256=_sha256_of_image(primary),
             captured_at=captured_at, width=w, height=h)),
         calibration=_to_calibration_schema(cal),
         summary=summary,

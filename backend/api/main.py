@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -70,9 +70,23 @@ def _decode_image(data: bytes) -> np.ndarray:
     return img
 
 
+def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
+    if label_text:
+        return ocr_from_text(label_text)
+    if tesseract_available():
+        try:
+            return tesseract_ocr(img)
+        except MetrosError:
+            return ocr_from_text("")
+    try:
+        return paddle_ocr(img)
+    except MetrosError:
+        return ocr_from_text("")
+
+
 @app.post("/scan")
 async def scan(
-    image: UploadFile = File(...),
+    images: List[UploadFile] = File(...),
     label_text: Optional[str] = Form(None),
     marker_mm: Optional[float] = Form(None),
     dict_name: str = Form("DICT_4X4_50"),
@@ -85,32 +99,21 @@ async def scan(
 ):
     # Prototype: no auth. Actions are attributed to a default field officer.
     user = {"sub": "prototype-officer", "role": "officer"}
-    img = _decode_image(await image.read())
+    if not images:
+        raise HTTPException(status_code=400, detail="upload at least one image")
 
-    # OCR order: pasted label text -> Tesseract (offline) -> PaddleOCR -> empty.
-    # Empty text still yields a valid report (calibration + Rule 7 run); Rule 6
-    # declarations then come back not_detected. Never hard-fails a camera scan.
-    if label_text:
-        ocr: OcrResult = ocr_from_text(label_text)
-    elif tesseract_available():
-        try:
-            ocr = tesseract_ocr(img)
-        except MetrosError:
-            ocr = ocr_from_text("")
-    else:
-        try:
-            ocr = paddle_ocr(img)
-        except MetrosError:
-            ocr = ocr_from_text("")
+    decoded = [_decode_image(await f.read()) for f in images]
+    # OCR each image (front + back). Text is combined for regex; the images
+    # themselves feed the Claude vision path when a credential is present.
+    ocrs = [_ocr_image(img, label_text if i == 0 else None)
+            for i, img in enumerate(decoded)]
 
     product = Product(name=product_name, brand=brand, category=category, source=source)
-    inspection = Inspection(officer=Officer(id=user["sub"] or "unknown", name=user["sub"] or "officer",
+    inspection = Inspection(officer=Officer(id=user["sub"], name=user["sub"],
                                             role=user["role"]))
-    # Read the label with Claude vision when available, else the offline regex
-    # path. `llm=false` forces offline.
-    report = run_scan(img, ocr, marker_mm=marker_mm, dict_name=dict_name,
+    report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                       product=product, inspection=inspection,
-                      image_file=image.filename or "upload.jpg",
+                      image_file=images[0].filename or "upload.jpg",
                       extract_backend="regex" if llm is False else "auto")
 
     save_report(session, report, created_by=user["sub"])

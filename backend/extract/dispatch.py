@@ -19,13 +19,13 @@ def extract_declarations(
     text: str,
     catalog: RuleCatalog,
     backend: str = "regex",
-    image=None,
+    images=None,
 ) -> List[FieldExtraction]:
     """Extract declarations using the requested backend.
 
     backend: "regex" (offline default), "llm" (require Claude), or "auto"
-    (Claude if available, else regex). `image` (a BGR ndarray) enables the
-    vision path.
+    (Claude if available, else regex). `images` (a list of BGR ndarrays, e.g.
+    front + back) enables the Claude vision path.
     """
     ids = [d.id for d in catalog.declarations]
 
@@ -34,14 +34,14 @@ def extract_declarations(
 
     if backend in ("llm", "auto"):
         from .llm import (
-            extract_fields_from_image,
+            extract_fields_from_images,
             extract_fields_llm,
             llm_available,
         )
         if backend == "llm" or llm_available():
             try:
-                if image is not None:
-                    return extract_fields_from_image(image, catalog, ids)
+                if images:
+                    return extract_fields_from_images(images, catalog, ids)
                 return extract_fields_llm(text, catalog, ids)
             except ExtractionError:
                 if backend == "llm":

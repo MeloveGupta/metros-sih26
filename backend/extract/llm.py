@@ -25,7 +25,7 @@ from .fields import FieldExtraction
 # Text extraction is simple -> cheapest capable tier. Reading a label straight
 # from a photo (vision) benefits from a stronger reader; both are env-overridable.
 DEFAULT_MODEL = os.environ.get("METROS_LLM_MODEL", "claude-haiku-4-5")
-VISION_MODEL = os.environ.get("METROS_LLM_VISION_MODEL", "claude-sonnet-5")
+VISION_MODEL = os.environ.get("METROS_LLM_VISION_MODEL", "claude-haiku-4-5")
 
 _SYSTEM = (
     "You extract mandatory declarations from an Indian packaged-commodity label "
@@ -62,8 +62,17 @@ _RESPONSE_SCHEMA = {
 }
 
 
+def _has_credentials() -> bool:
+    return bool(os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
+
+
 def _client():
-    """Zero-arg Anthropic client. Raises ExtractionError if unusable."""
+    """Anthropic client using whatever credential is present.
+
+    ANTHROPIC_AUTH_TOKEN (an OAuth bearer token) is used with the oauth beta
+    header; otherwise ANTHROPIC_API_KEY; otherwise a bare client (resolves an
+    `ant auth login` profile if one exists). Raises ExtractionError if unusable.
+    """
     try:
         import anthropic
     except Exception as exc:  # ImportError
@@ -71,19 +80,29 @@ def _client():
             "LLM extraction needs the `anthropic` SDK (pip install anthropic). "
             f"Underlying error: {exc}"
         ) from exc
+
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    key = os.environ.get("ANTHROPIC_API_KEY")
     try:
-        # No api_key argument: credentials come from `ant auth login` (OAuth
-        # profile), or ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY if set.
+        if token:
+            return anthropic.Anthropic(
+                auth_token=token,
+                default_headers={"anthropic-beta": "oauth-2025-04-20"},
+            )
+        if key:
+            return anthropic.Anthropic(api_key=key)
         return anthropic.Anthropic()
     except Exception as exc:
         raise ExtractionError(
-            "Could not construct the Anthropic client. Run `ant auth login` to "
-            f"sign in (no API key required). Underlying error: {exc}"
+            "Could not construct the Anthropic client. Set ANTHROPIC_AUTH_TOKEN "
+            f"or ANTHROPIC_API_KEY. Underlying error: {exc}"
         ) from exc
 
 
 def llm_available() -> bool:
-    """True if the SDK imports and a credential source is resolvable."""
+    """True only when a credential is present and the client constructs."""
+    if not _has_credentials():
+        return False
     try:
         _client()
         return True
@@ -132,17 +151,25 @@ def _parse_response(response, declaration_ids: List[str]) -> List[FieldExtractio
     return out
 
 
-def _create(client, model: str, content):
-    try:
-        return client.messages.create(
-            model=model,
-            max_tokens=2000,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
-            messages=[{"role": "user", "content": content}],
-        )
-    except Exception as exc:
-        raise ExtractionError(f"LLM request failed: {exc}") from exc
+def _create(client, model: str, content, retries: int = 2):
+    import time
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            return client.messages.create(
+                model=model,
+                max_tokens=2000,
+                system=_SYSTEM,
+                output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
+                messages=[{"role": "user", "content": content}],
+            )
+        except Exception as exc:
+            last = exc
+            if "429" in str(exc) or "rate_limit" in str(exc).lower():
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
+    raise ExtractionError(f"LLM request failed: {last}") from last
 
 
 def extract_fields_llm(
@@ -165,19 +192,35 @@ def _encode_jpeg(image) -> str:
     return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
-def extract_fields_from_image(
-    image,
+def extract_fields_from_images(
+    images: List,
     catalog: RuleCatalog,
     declaration_ids: List[str],
     model: str = VISION_MODEL,
 ) -> List[FieldExtraction]:
-    """Read the label directly from a BGR image via Claude vision (no OCR needed)."""
+    """Read declarations from one or more BGR images via Claude vision.
+
+    Pass front + back photos together; Claude reads all of them and merges the
+    declarations. No OCR or calibration card needed for this text extraction.
+    """
+    if not images:
+        raise ExtractionError("no images provided to the vision extractor")
     client = _client()
     content = [
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                      "data": _encode_jpeg(image)}},
-        {"type": "text", "text": _declarations_block(catalog, declaration_ids)
-         + "\n\nRead the packaged-product label in the image and extract the "
-           "declarations. Transcribe values verbatim from the label."},
+                                     "data": _encode_jpeg(img)}}
+        for img in images
     ]
+    content.append({
+        "type": "text",
+        "text": _declarations_block(catalog, declaration_ids)
+        + "\n\nThese images are the front and/or back of one packaged product. "
+          "Read every label panel and extract the declarations, transcribing "
+          "values verbatim. A declaration found on any image counts as present.",
+    })
     return _parse_response(_create(client, model, content), declaration_ids)
+
+
+def extract_fields_from_image(image, catalog, declaration_ids, model=VISION_MODEL):
+    """Single-image convenience wrapper around extract_fields_from_images."""
+    return extract_fields_from_images([image], catalog, declaration_ids, model)

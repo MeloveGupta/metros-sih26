@@ -1,9 +1,8 @@
 // Thin API client for the Metros backend. Prototype: no auth.
 
-export async function scan({ file, markerMm, productName }) {
+export async function scan({ files, productName }) {
   const form = new FormData();
-  form.append("image", file);
-  if (markerMm) form.append("marker_mm", markerMm);
+  for (const f of files) form.append("images", f);
   if (productName) form.append("product_name", productName);
 
   const res = await fetch("/scan", { method: "POST", body: form });
