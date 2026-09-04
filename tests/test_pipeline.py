@@ -51,8 +51,8 @@ def test_full_scan_uncalibrated_no_mm(scene_factory):
 
 
 def test_disposition_flags_when_font_below(scene_factory):
-    # Tiny glyph: 7px tall at 0.1mm/px => 0.7mm, below the 1.0mm absolute floor.
-    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 150, 5, 7))
+    # Short glyph: 8px tall at 0.1mm/px => 0.8mm, below the 1.0mm absolute floor.
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 150, 24, 8))
     text = "MRP Rs. 45.00 (incl. of all taxes)"
     ocr = OcrResult(text=text, tokens=[Token(text=text, bbox=meta["glyph_bbox_px"], confidence=0.9)])
 

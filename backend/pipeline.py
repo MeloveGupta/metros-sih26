@@ -120,13 +120,23 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     """
     if not cal.calibrated or not tokens:
         return FontInputs()
+    import re
     mean_side = _mean_side_px(cal)
     measured = []
     for t in tokens:
         if not t.bbox:
             continue
+        txt = t.text.strip()
         x, y, w, h = t.bbox
-        if w <= 1 or h <= 1 or len(t.text.strip()) < 2:
+        # Reject OCR noise: low confidence, too-short, or not a real word/number.
+        if getattr(t, "confidence", 1.0) < 0.55:
+            continue
+        if w < 6 or h < 6:                       # a few-pixel speck, not text
+            continue
+        alnum = re.sub(r"[^A-Za-z0-9]", "", txt)
+        if len(alnum) < 3:                       # need >= 3 letters/digits
+            continue
+        if len(alnum) / max(len(txt), 1) < 0.6:  # mostly symbols => garbage
             continue
         try:
             hmm = glyph_height_mm(cal.H_img_to_mm, t.bbox, cal.marker_mm,
@@ -134,7 +144,7 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
             ratio = glyph_width_ratio(cal.H_img_to_mm, t.bbox)
         except Exception:
             continue
-        measured.append((hmm, ratio, t.text.strip()))
+        measured.append((hmm, ratio, txt))
     if not measured:
         return FontInputs()
     # Smallest text is the compliance-critical one; report the 3 smallest.
