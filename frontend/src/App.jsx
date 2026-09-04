@@ -45,7 +45,7 @@ function ScanForm({ onReport }) {
         <h2>Scan a packaged product</h2>
         <p className="lede">
           Add the front and back of the pack, plus any close-ups of the label. More
-          photos means the reader finds more declarations. Include the printed ArUco
+          photos means the reader finds more declarations. Include the printed Metros
           card in a shot to also measure letter height (Rule 7).
         </p>
       </div>
