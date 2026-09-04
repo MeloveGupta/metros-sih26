@@ -45,3 +45,7 @@ minio-data/
 .vscode/
 .idea/
 .DS_Store
+
+# TypeUI installed skills (re-add via npx skills add)
+.agents/
+.claude/skills/
