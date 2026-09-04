@@ -22,14 +22,12 @@ import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from ..core.config import get_settings
 from ..core.errors import MetrosError
 from ..db.repository import (
     append_audit,
     get_report,
-    get_user_by_email,
     init_db,
     make_engine,
     save_report,
@@ -40,15 +38,8 @@ from ..pipeline import run_scan
 from ..reports.render import render_docx
 from ..schemas.report import Inspection, Officer, Product
 from ..vision.ocr import OcrResult, ocr_from_text, paddle_ocr
-from .security import (
-    create_access_token,
-    decode_token,
-    role_allows,
-    verify_password,
-)
 
 app = FastAPI(title="Metros API", version="0.1.0")
-oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 _engine = make_engine()
 init_db(_engine)
@@ -60,34 +51,9 @@ def get_session():
         yield session
 
 
-def current_user(token: str = Depends(oauth2)) -> dict:
-    try:
-        payload = decode_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="invalid or expired token")
-    return {"sub": payload.get("sub"), "role": payload.get("role", "officer")}
-
-
-def require_roles(*allowed: str):
-    def _dep(user: dict = Depends(current_user)) -> dict:
-        if not role_allows(user["role"], allowed):
-            raise HTTPException(status_code=403, detail=f"role {user['role']} not permitted")
-        return user
-    return _dep
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "version": app.version}
-
-
-@app.post("/auth/token")
-def login(form: OAuth2PasswordRequestForm = Depends(), session=Depends(get_session)):
-    user = get_user_by_email(session, form.username)
-    if user is None or not verify_password(form.password, user.pw_hash):
-        raise HTTPException(status_code=401, detail="incorrect email or password")
-    token = create_access_token(sub=user.id, role=user.role)
-    return {"access_token": token, "token_type": "bearer", "role": user.role}
 
 
 def _decode_image(data: bytes) -> np.ndarray:
@@ -109,9 +75,10 @@ async def scan(
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     llm: bool = Form(False),
-    user: dict = Depends(require_roles("officer", "admin")),
     session=Depends(get_session),
 ):
+    # Prototype: no auth. Actions are attributed to a default field officer.
+    user = {"sub": "prototype-officer", "role": "officer"}
     img = _decode_image(await image.read())
 
     # OCR: provided label text -> PaddleOCR (if installed) -> empty text.
@@ -142,7 +109,6 @@ async def scan(
 @app.get("/scans")
 def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = None,
                limit: int = 50, offset: int = 0,
-               user: dict = Depends(require_roles("officer", "admin", "auditor")),
                session=Depends(get_session)):
     rows = search_scans(session, disposition=disposition, product_name=product_name,
                         limit=limit, offset=offset)
@@ -154,9 +120,7 @@ def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = 
 
 
 @app.get("/scans/{scan_id}")
-def fetch_scan(scan_id: str,
-               user: dict = Depends(require_roles("officer", "admin", "auditor")),
-               session=Depends(get_session)):
+def fetch_scan(scan_id: str, session=Depends(get_session)):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
@@ -164,9 +128,7 @@ def fetch_scan(scan_id: str,
 
 
 @app.get("/scans/{scan_id}/report.docx")
-def download_docx(scan_id: str,
-                  user: dict = Depends(require_roles("officer", "admin", "auditor")),
-                  session=Depends(get_session)):
+def download_docx(scan_id: str, session=Depends(get_session)):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
@@ -179,14 +141,13 @@ def download_docx(scan_id: str,
 @app.post("/scans/{scan_id}/actions")
 def officer_action(scan_id: str, declaration_id: str = Form(...), action: str = Form(...),
                    reason: str = Form(""),
-                   user: dict = Depends(require_roles("officer", "admin")),
                    session=Depends(get_session)):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
     if action == "override" and not reason:
         raise HTTPException(status_code=400, detail="override requires a reason")
-    append_audit(session, action=f"officer_{action}", user_id=user["sub"],
+    append_audit(session, action=f"officer_{action}", user_id="prototype-officer",
                  target=f"{scan_id}/{declaration_id}", reason=reason)
     return {"status": "recorded", "scan_id": scan_id, "declaration_id": declaration_id,
             "action": action}

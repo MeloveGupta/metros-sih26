@@ -1,35 +1,7 @@
 import React, { useState } from "react";
-import { getToken, login, logout, scan } from "./api.js";
+import { scan } from "./api.js";
 import ReportView from "./ReportView.jsx";
 import CameraCapture from "./CameraCapture.jsx";
-
-function Login({ onLogin }) {
-  const [email, setEmail] = useState("officer@x.gov");
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState("");
-
-  async function submit(e) {
-    e.preventDefault();
-    setErr("");
-    try {
-      await login(email, password);
-      onLogin();
-    } catch {
-      setErr("Login failed - check email and password.");
-    }
-  }
-
-  return (
-    <form className="card" onSubmit={submit}>
-      <h2>Officer sign-in</h2>
-      <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-      <label>Password<input type="password" value={password}
-        onChange={(e) => setPassword(e.target.value)} /></label>
-      <button type="submit">Sign in</button>
-      {err && <p className="err">{err}</p>}
-    </form>
-  );
-}
 
 function ScanForm({ onReport }) {
   const [file, setFile] = useState(null);
@@ -48,12 +20,11 @@ function ScanForm({ onReport }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (!file) return setErr("Capture or choose a product image first.");
+    if (!file) return setErr("Capture or choose a product photo first.");
     setBusy(true);
     setErr("");
     try {
-      const report = await scan({ file, markerMm, productName });
-      onReport(report);
+      onReport(await scan({ file, markerMm, productName }));
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -62,63 +33,76 @@ function ScanForm({ onReport }) {
   }
 
   return (
-    <form className="card" onSubmit={submit}>
-      <h2>Scan a packaged product</h2>
-      <p className="hint">
-        Frame the product with the printed ArUco calibration card in the same plane
-        as the label, so letter height can be measured in millimetres.
-      </p>
+    <form className="panel" onSubmit={submit}>
+      <div className="panel-head">
+        <span className="eyebrow">Capture</span>
+        <h2>Scan a packaged product</h2>
+        <p className="lede">
+          Keep the printed ArUco card flat, in the same plane as the label. It sets
+          the millimetre scale - no card in frame, no letter-height verdict.
+        </p>
+      </div>
 
       <CameraCapture onCapture={pick} />
-      <label>…or choose / take a photo
+      <label className="field file">
+        <span>…or choose / take a photo</span>
         <input type="file" accept="image/*" capture="environment"
-          onChange={(e) => pick(e.target.files[0] || null)} /></label>
+          onChange={(e) => pick(e.target.files[0] || null)} />
+      </label>
 
       {previewUrl && (
-        <div className="preview">
-          <img src={previewUrl} alt="captured product" />
-          <span className="muted">{file?.name}</span>
-        </div>
+        <figure className="preview">
+          <img src={previewUrl} alt="Captured product" />
+          <figcaption>{file?.name}</figcaption>
+        </figure>
       )}
 
-      <label>Marker size (mm)
-        <input value={markerMm} onChange={(e) => setMarkerMm(e.target.value)} /></label>
-      <label>Product name (optional)
-        <input value={productName} onChange={(e) => setProductName(e.target.value)} /></label>
-      <button type="submit" disabled={busy}>{busy ? "Scanning…" : "Scan"}</button>
-      {err && <p className="err">{err}</p>}
+      <div className="grid2">
+        <label className="field">
+          <span>Marker side (mm)</span>
+          <input className="mono" value={markerMm}
+            onChange={(e) => setMarkerMm(e.target.value)} inputMode="decimal" />
+        </label>
+        <label className="field">
+          <span>Product name</span>
+          <input value={productName} placeholder="optional"
+            onChange={(e) => setProductName(e.target.value)} />
+        </label>
+      </div>
+
+      <button className="cta" type="submit" disabled={busy}>
+        {busy ? "Measuring…" : "Scan & measure"}
+      </button>
+      {err && <p className="err" role="alert">{err}</p>}
     </form>
   );
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(Boolean(getToken()));
   const [report, setReport] = useState(null);
 
   return (
-    <div className="wrap">
-      <header>
-        <h1>Metros</h1>
-        <span className="tag">Legal Metrology (Packaged Commodities) Rules, 2011 - decision-support</span>
-        {authed && (
-          <button className="linkish" onClick={() => { logout(); setAuthed(false); setReport(null); }}>
-            Sign out
-          </button>
-        )}
+    <div className="app">
+      <header className="masthead">
+        <div className="brand">
+          <span className="wordmark">METROS</span>
+          <span className="tick-strip" aria-hidden="true" />
+        </div>
+        <p className="tagline">
+          Millimetre-grade compliance for packaged commodities · Legal Metrology
+          (Packaged Commodities) Rules, 2011
+        </p>
       </header>
 
-      {!authed ? (
-        <Login onLogin={() => setAuthed(true)} />
-      ) : (
-        <>
-          <ScanForm onReport={setReport} />
-          {report && <ReportView report={report} />}
-        </>
-      )}
+      <main>
+        <ScanForm onReport={setReport} />
+        {report && <ReportView report={report} />}
+      </main>
 
-      <footer>
-        Reports flag <b>potential</b> non-compliance for officer verification - not a
-        final legal finding. Physical verification required for enforcement.
+      <footer className="foot">
+        Decision-support. Metros flags <b>potential</b> non-compliance for officer
+        verification - it is not a final legal finding. Physical verification is
+        required for enforcement.
       </footer>
     </div>
   );
