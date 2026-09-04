@@ -38,6 +38,59 @@ def ocr_from_text(text: str, tokens: Optional[List[Token]] = None) -> OcrResult:
     return OcrResult(text=text, tokens=tokens)
 
 
+def tesseract_available() -> bool:
+    """True if pytesseract imports and the tesseract binary is on PATH."""
+    try:
+        import shutil
+        import pytesseract  # noqa: F401
+        return shutil.which("tesseract") is not None
+    except Exception:
+        return False
+
+
+def tesseract_ocr(image: np.ndarray, lang: str = "eng") -> OcrResult:
+    """Run Tesseract over a BGR image, returning word tokens with pixel boxes.
+
+    Offline and free. Raises OcrError if pytesseract or the binary is missing.
+    """
+    try:
+        import cv2
+        import pytesseract
+        from pytesseract import Output
+    except Exception as exc:
+        raise OcrError(
+            "Tesseract OCR is not available. Install the engine (`brew install "
+            "tesseract`) and `pip install pytesseract`. Underlying error: {}".format(exc)
+        ) from exc
+
+    gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    try:
+        data = pytesseract.image_to_data(gray, lang=lang, output_type=Output.DICT)
+    except Exception as exc:
+        raise OcrError(f"Tesseract failed: {exc}") from exc
+
+    tokens: List[Token] = []
+    lines: dict = {}
+    n = len(data.get("text", []))
+    for i in range(n):
+        word = (data["text"][i] or "").strip()
+        try:
+            conf = float(data["conf"][i])
+        except (ValueError, TypeError):
+            conf = -1.0
+        if not word or conf < 0:
+            continue
+        x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+        tokens.append(Token(text=word, bbox=(int(x), int(y), int(w), int(h)),
+                            confidence=conf / 100.0))
+        key = (data.get("block_num", [0] * n)[i], data.get("par_num", [0] * n)[i],
+               data.get("line_num", [0] * n)[i])
+        lines.setdefault(key, []).append(word)
+
+    text = "\n".join(" ".join(ws) for ws in lines.values())
+    return OcrResult(text=text, tokens=tokens)
+
+
 def paddle_ocr(image: np.ndarray, lang: str = "en") -> OcrResult:
     """Run PaddleOCR over a BGR image. Raises OcrError if PaddleOCR is absent."""
     try:

@@ -37,7 +37,13 @@ from ..db.repository import (
 from ..pipeline import run_scan
 from ..reports.render import render_docx
 from ..schemas.report import Inspection, Officer, Product
-from ..vision.ocr import OcrResult, ocr_from_text, paddle_ocr
+from ..vision.ocr import (
+    OcrResult,
+    ocr_from_text,
+    paddle_ocr,
+    tesseract_available,
+    tesseract_ocr,
+)
 
 app = FastAPI(title="Metros API", version="0.1.0")
 
@@ -81,12 +87,16 @@ async def scan(
     user = {"sub": "prototype-officer", "role": "officer"}
     img = _decode_image(await image.read())
 
-    # OCR: provided label text -> PaddleOCR (if installed) -> empty text.
-    # Empty text still yields a valid report: calibration + Rule 7 font
-    # measurement run, and Rule 6 declarations come back as not_detected. It
-    # never hard-fails a camera scan just because OCR isn't installed.
+    # OCR order: pasted label text -> Tesseract (offline) -> PaddleOCR -> empty.
+    # Empty text still yields a valid report (calibration + Rule 7 run); Rule 6
+    # declarations then come back not_detected. Never hard-fails a camera scan.
     if label_text:
         ocr: OcrResult = ocr_from_text(label_text)
+    elif tesseract_available():
+        try:
+            ocr = tesseract_ocr(img)
+        except MetrosError:
+            ocr = ocr_from_text("")
     else:
         try:
             ocr = paddle_ocr(img)

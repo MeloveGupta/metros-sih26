@@ -1,11 +1,15 @@
-# Optional on-device OCR (PaddleOCR). Install ONLY if you want the server to read
-# label text from images automatically instead of pasting label text or using
-# the LLM extractor:  pip install -r requirements-ocr.txt
+# Optional on-device OCR (offline label reading). Two engines are supported;
+# install whichever fits your platform:  pip install -r requirements-ocr.txt
 #
-# NOTE: paddlepaddle ships wheels only for specific Python versions (roughly
-# 3.8–3.12 at time of writing) and specific OS/arch. If pip says "No matching
-# distribution", your Python is unsupported by paddle — use Python 3.12 in a
-# separate venv, or skip OCR and use --label-text / --llm instead.
+# 1) Tesseract (recommended - light, works on any Python incl. 3.14):
+#      brew install tesseract        # macOS  (Linux: apt-get install tesseract-ocr)
+#      pip install pytesseract
+#    Metros auto-detects and uses Tesseract when the binary is on PATH.
+#
+# 2) PaddleOCR (heavier, better on some layouts, no wheels on newer Python):
+#      needs Python ~3.12; if pip says "No matching distribution", your Python
+#      is unsupported by paddle - use Tesseract instead.
 
-paddleocr>=2.9
-paddlepaddle>=2.6
+pytesseract>=0.3.13
+# paddleocr>=2.9      # uncomment for the PaddleOCR path (Python ~3.12)
+# paddlepaddle>=2.6

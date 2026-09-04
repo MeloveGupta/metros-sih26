@@ -21,7 +21,7 @@ from .core.errors import MetrosError
 from .pipeline import run_scan
 from .reports.render import render_docx, render_html, render_json
 from .schemas.report import Product, Status
-from .vision.ocr import ocr_from_text, paddle_ocr
+from .vision.ocr import ocr_from_text, paddle_ocr, tesseract_available, tesseract_ocr
 
 _STATUS_MARK = {
     Status.COMPLIANT: "OK  ",
@@ -68,6 +68,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     if label_text is not None:
         ocr = ocr_from_text(label_text)
+    elif tesseract_available():
+        ocr = tesseract_ocr(image)
     else:
         try:
             ocr = paddle_ocr(image)
