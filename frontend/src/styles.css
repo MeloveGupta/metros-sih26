@@ -263,6 +263,25 @@ button { font: inherit; }
 .actions li { font-size: var(--t-label); font-weight: 600; padding: 8px 12px; margin: 8px 0;
   border-left: var(--bd) solid var(--ink); background: var(--g1); }
 
+/* Officer verification */
+.verify { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.vrow { border: var(--bd) solid var(--ink); padding: 12px 14px; }
+.vrow-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.vrow-label { font-weight: 700; }
+.vbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.vbtn {
+  font-family: var(--font); font-weight: 800; text-transform: uppercase; font-size: var(--t-label);
+  letter-spacing: .02em; padding: 10px; cursor: pointer; background: var(--card); color: var(--ink);
+  border: var(--bd) solid var(--ink);
+}
+.vbtn.on-ok { background: var(--ink); color: var(--card); }
+.vbtn.on-bad { background: var(--ink); color: var(--card); }
+.vnote { width: 100%; }
+.verified-done {
+  margin-top: 14px; padding: 14px; border: var(--bd) solid var(--ink); background: var(--g1);
+  font-weight: 700; font-size: var(--t-label);
+}
+
 .dl {
   display: inline-block; margin-top: 26px; font-weight: 800; font-size: var(--t-body);
   text-transform: uppercase; letter-spacing: 0.03em; color: var(--card); background: var(--ink);

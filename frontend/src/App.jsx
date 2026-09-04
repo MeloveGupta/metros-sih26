@@ -96,7 +96,7 @@ export default function App() {
 
       <main>
         <ScanForm onReport={setReport} />
-        {report && <ReportView report={report} />}
+        {report && <ReportView report={report} onUpdate={setReport} />}
       </main>
     </div>
   );

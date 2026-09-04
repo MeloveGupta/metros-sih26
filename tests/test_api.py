@@ -97,7 +97,7 @@ def test_single_image_rejected(client):
     assert r.status_code == 400
 
 
-def test_override_requires_reason(client):
+def test_finalize_records_officer_actions(client):
     scan_id = client.post(
         "/scan",
         files=[("images", ("f.png", _marker_png(), "image/png")),
@@ -105,11 +105,18 @@ def test_override_requires_reason(client):
         data={"label_text": "MRP Rs. 10", "marker_mm": "40"},
     ).json()["report_id"]
 
-    bad = client.post(f"/scans/{scan_id}/actions",
-                      data={"declaration_id": "mrp", "action": "override"})
+    # confirmed issue without a note is rejected
+    bad = client.post(f"/scans/{scan_id}/finalize", json={
+        "actions": [{"declaration_id": "mrp", "verdict": "confirmed_issue", "note": ""}]})
     assert bad.status_code == 400
 
-    ok = client.post(f"/scans/{scan_id}/actions",
-                     data={"declaration_id": "mrp", "action": "override",
-                           "reason": "verified with caliper"})
+    ok = client.post(f"/scans/{scan_id}/finalize", json={
+        "officer_name": "Insp. Rao",
+        "actions": [
+            {"declaration_id": "mrp", "verdict": "verified_compliant", "note": "reads 10 on pack"},
+            {"declaration_id": "net_quantity", "verdict": "confirmed_issue", "note": "no net qty"},
+        ]})
     assert ok.status_code == 200
+    body = ok.json()
+    assert body["finalized_by"] == "Insp. Rao"
+    assert len(body["officer_actions"]) == 2

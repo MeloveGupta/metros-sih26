@@ -1,5 +1,5 @@
-import React from "react";
-import { pdfUrl } from "./api.js";
+import React, { useMemo, useState } from "react";
+import { finalize, pdfUrl } from "./api.js";
 
 function Pill({ status }) {
   return <span className={`pill s-${status}`}>{status.replace(/_/g, " ")}</span>;
@@ -32,7 +32,107 @@ function Gauge({ item }) {
   );
 }
 
-export default function ReportView({ report }) {
+// Items needing officer attention: flagged declarations + missing ones.
+function itemsNeedingReview(report) {
+  return report.declarations
+    .filter((d) => ["potential_non_compliance", "not_detected"].includes(d.status))
+    .map((d) => ({ id: d.id, label: d.label, status: d.status }));
+}
+
+function Verification({ report, onFinalized }) {
+  const items = useMemo(() => itemsNeedingReview(report), [report]);
+  const [officerName, setOfficerName] = useState("");
+  const [state, setState] = useState(() =>
+    Object.fromEntries(items.map((i) => [i.id, { verdict: "", note: "" }])));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (report.finalized_by) {
+    return (
+      <div className="verified-done">
+        ✓ Verified &amp; finalized by <b>{report.finalized_by}</b>. The PDF now
+        carries your findings.
+      </div>
+    );
+  }
+  if (!items.length) return null;
+
+  function set(id, patch) {
+    setState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
+    setErr("");
+  }
+
+  const allDecided = items.every((i) => state[i.id]?.verdict);
+  const needNote = items.some(
+    (i) => state[i.id]?.verdict === "confirmed_issue" && !state[i.id]?.note.trim());
+
+  async function submit() {
+    if (!allDecided) return setErr("Give a decision on every item.");
+    if (needNote) return setErr("A confirmed non-compliance needs a note.");
+    setBusy(true);
+    setErr("");
+    try {
+      const actions = items.map((i) => ({
+        declaration_id: i.id, label: i.label,
+        verdict: state[i.id].verdict, note: state[i.id].note,
+      }));
+      const updated = await finalize(report.report_id, { officerName, actions });
+      onFinalized(updated);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3 className="sec"><span className="sec-no mono">03</span> Officer verification</h3>
+      <p className="muted small">Check the physical pack for each flagged item, record your finding, then confirm.</p>
+      <div className="verify">
+        {items.map((i) => {
+          const v = state[i.id] || {};
+          return (
+            <div className="vrow" key={i.id}>
+              <div className="vrow-top">
+                <span className="vrow-label">{i.label}</span>
+                <span className={`pill s-${i.status}`}>{i.status.replace(/_/g, " ")}</span>
+              </div>
+              <div className="vbtns">
+                <button type="button"
+                  className={`vbtn ${v.verdict === "verified_compliant" ? "on-ok" : ""}`}
+                  onClick={() => set(i.id, { verdict: "verified_compliant" })}>
+                  Verified compliant
+                </button>
+                <button type="button"
+                  className={`vbtn ${v.verdict === "confirmed_issue" ? "on-bad" : ""}`}
+                  onClick={() => set(i.id, { verdict: "confirmed_issue" })}>
+                  Issue confirmed
+                </button>
+              </div>
+              <input className="vnote" value={v.note || ""}
+                onChange={(e) => set(i.id, { note: e.target.value })}
+                placeholder={v.verdict === "confirmed_issue"
+                  ? "note (required) - what is wrong / your finding"
+                  : "note (optional) - e.g. the value you read on the pack"} />
+            </div>
+          );
+        })}
+        <label className="field">
+          <span>Officer name</span>
+          <input value={officerName} placeholder="optional"
+            onChange={(e) => setOfficerName(e.target.value)} />
+        </label>
+        <button className="cta" type="button" disabled={busy} onClick={submit}>
+          {busy ? "Finalizing…" : "Confirm & finalize report"}
+        </button>
+        {err && <p className="err" role="alert">{err}</p>}
+      </div>
+    </>
+  );
+}
+
+export default function ReportView({ report, onUpdate }) {
   const s = report.summary;
   const cal = report.calibration;
   const fa = report.font_analysis;
@@ -122,12 +222,7 @@ export default function ReportView({ report }) {
         <p className="muted">No letter-height measurements (no glyph boxes, or uncalibrated).</p>
       )}
 
-      {s.required_actions.length > 0 && (
-        <>
-          <h3 className="sec"><span className="sec-no mono">03</span> Officer actions</h3>
-          <ul className="actions">{s.required_actions.map((a, i) => <li key={i}>{a}</li>)}</ul>
-        </>
-      )}
+      <Verification report={report} onFinalized={onUpdate} />
 
       <a className="dl" href={pdfUrl(report.report_id)} target="_blank" rel="noreferrer">Download PDF report</a>
     </section>

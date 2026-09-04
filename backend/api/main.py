@@ -15,6 +15,7 @@ scan still runs. Millimetre verdicts require a calibration marker in the image.
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -22,6 +23,7 @@ import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 
 from ..core.config import get_settings
 from ..core.errors import MetrosError
@@ -33,10 +35,11 @@ from ..db.repository import (
     save_report,
     search_scans,
     session_factory,
+    update_report,
 )
 from ..pipeline import run_scan
 from ..reports.render import render_pdf
-from ..schemas.report import Inspection, Officer, Product
+from ..schemas.report import Inspection, Officer, OfficerAction, Product
 from ..vision.ocr import (
     OcrResult,
     ocr_from_text,
@@ -164,19 +167,56 @@ def download_pdf(scan_id: str, session=Depends(get_session)):
     return FileResponse(str(out), filename=f"metros-{scan_id}.pdf", media_type="application/pdf")
 
 
-@app.post("/scans/{scan_id}/actions")
-def officer_action(scan_id: str, declaration_id: str = Form(...), action: str = Form(...),
-                   reason: str = Form(""),
-                   session=Depends(get_session)):
+class FinalizeAction(BaseModel):
+    declaration_id: str
+    label: str = ""
+    verdict: str            # "verified_compliant" | "confirmed_issue"
+    note: str = ""
+
+
+class FinalizeBody(BaseModel):
+    officer_name: str = ""
+    actions: List[FinalizeAction] = []
+
+
+@app.post("/scans/{scan_id}/finalize")
+def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session)):
+    """Record the officer's decision on each flagged item and finalize the report.
+
+    Each decision is appended (append-only) to the report's officer_actions and
+    the audit log; the finalized report re-renders into the PDF with real
+    officer findings.
+    """
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
-    if action == "override" and not reason:
-        raise HTTPException(status_code=400, detail="override requires a reason")
-    append_audit(session, action=f"officer_{action}", user_id="prototype-officer",
-                 target=f"{scan_id}/{declaration_id}", reason=reason)
-    return {"status": "recorded", "scan_id": scan_id, "declaration_id": declaration_id,
-            "action": action}
+
+    now = datetime.now(timezone.utc)
+    officer = body.officer_name.strip() or "field officer"
+    for a in body.actions:
+        if a.verdict == "confirmed_issue" and not a.note.strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"a confirmed non-compliance needs a note ({a.label or a.declaration_id})",
+            )
+        report.officer_actions.append(OfficerAction(
+            declaration_id=a.declaration_id,
+            action=a.verdict,
+            reason=a.note.strip() or None,
+            officer_id=officer,
+            at=now,
+        ))
+        append_audit(session, action=f"officer_{a.verdict}", user_id=officer,
+                     target=f"{scan_id}/{a.declaration_id}", reason=a.note.strip())
+
+    # Record who finalized + when in the inspection block.
+    if report.inspection.officer:
+        report.inspection.officer.name = officer
+    report.finalized_at = now
+    report.finalized_by = officer
+
+    update_report(session, report)
+    return JSONResponse(content=report.model_dump(by_alias=True, mode="json"))
 
 
 # --- Serve the built frontend (single origin; no dev server / HMR reloads) ---

@@ -22,3 +22,16 @@ export async function listScans() {
 export function pdfUrl(reportId) {
   return `/scans/${reportId}/report.pdf`;
 }
+
+export async function finalize(reportId, { officerName, actions }) {
+  const res = await fetch(`/scans/${reportId}/finalize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ officer_name: officerName, actions }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Finalize failed (${res.status})`);
+  }
+  return res.json();
+}

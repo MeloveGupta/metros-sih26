@@ -142,7 +142,25 @@
 <p class="note">No letter-height measurement (no Metros card in frame, or uncalibrated).</p>
 {% endif %}
 
-{% if r.summary.required_actions %}
+{% if r.officer_actions %}
+<h2 class="sec"><span>03</span>Officer verification</h2>
+<table>
+  <thead><tr><th style="width:34%">Item</th><th style="width:20%">Decision</th>
+    <th style="width:46%">Officer note</th></tr></thead>
+  <tbody>
+  {% for a in r.officer_actions %}
+    <tr>
+      <td>{{ a.declaration_id }}</td>
+      <td><span class="pill st-{{ 'compliant' if a.action == 'verified_compliant' else 'potential_non_compliance' }}">
+        {{ "verified compliant" if a.action == "verified_compliant" else "issue confirmed" }}</span></td>
+      <td class="muted">{{ a.reason or "-" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="note">Finalized by <b>{{ r.finalized_by or "-" }}</b>
+  {% if r.finalized_at %}on {{ r.finalized_at.strftime("%d %b %Y, %H:%M UTC") if r.finalized_at.strftime else r.finalized_at }}{% endif %}.</p>
+{% elif r.summary.required_actions %}
 <h2 class="sec"><span>03</span>Officer actions required</h2>
 <table>
   <tbody>
@@ -151,6 +169,7 @@
   {% endfor %}
   </tbody>
 </table>
+<p class="note">Not yet verified by an officer.</p>
 {% endif %}
 
 <h2 class="sec"><span>04</span>Evidence &amp; legal basis</h2>

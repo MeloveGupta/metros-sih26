@@ -86,6 +86,17 @@ def get_report(session: Session, scan_id: str) -> Optional[Report]:
     return Report.model_validate_json(row.report_json)
 
 
+def update_report(session: Session, report: Report) -> Optional[ScanRow]:
+    """Overwrite the stored report JSON + denormalized columns for an existing scan."""
+    row = session.get(ScanRow, report.report_id)
+    if row is None:
+        return None
+    row.disposition = report.disposition.value
+    row.report_json = report.model_dump_json(by_alias=True)
+    session.commit()
+    return row
+
+
 def search_scans(
     session: Session,
     *,

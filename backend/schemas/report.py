@@ -215,4 +215,6 @@ class Report(BaseModel):
     font_analysis: FontAnalysis = Field(default_factory=FontAnalysis)
     legal_basis: dict = Field(default_factory=dict)
     officer_actions: List[OfficerAction] = Field(default_factory=list)
+    finalized_at: Optional[datetime] = None
+    finalized_by: Optional[str] = None
     limitations: str = LIMITATIONS_TEXT
