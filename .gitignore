@@ -49,3 +49,6 @@ minio-data/
 # TypeUI installed skills (re-add via npx skills add)
 .agents/
 .claude/skills/
+
+data/*.db-wal
+data/*.db-shm

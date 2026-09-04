@@ -17,11 +17,25 @@ from .models import AuditLog, Base, ProductRow, ScanRow, User
 def make_engine(database_url: Optional[str] = None) -> Engine:
     url = database_url or get_settings().database_url
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    if url.startswith("sqlite"):
+        connect_args["timeout"] = 15  # wait out transient locks instead of erroring
     # Ensure the parent directory exists for a file-based SQLite DB.
     if url.startswith("sqlite:///") and ":memory:" not in url:
         db_path = Path(url.replace("sqlite:///", "", 1))
         db_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(url, connect_args=connect_args, future=True)
+    engine = create_engine(url, connect_args=connect_args, future=True)
+    # WAL improves concurrent read/write durability for the file-based DB.
+    if url.startswith("sqlite:///") and ":memory:" not in url:
+        from sqlalchemy import event
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _rec):
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=15000")
+            cur.close()
+
+    return engine
 
 
 def init_db(engine: Engine) -> None:
