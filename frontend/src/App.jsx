@@ -98,24 +98,13 @@ export default function App() {
       <header className="masthead">
         <div className="brand">
           <span className="wordmark">METROS</span>
-          <span className="tick-strip" aria-hidden="true" />
         </div>
-        <p className="tagline">
-          Millimetre-grade compliance for packaged commodities · Legal Metrology
-          (Packaged Commodities) Rules, 2011
-        </p>
       </header>
 
       <main>
         <ScanForm onReport={setReport} />
         {report && <ReportView report={report} />}
       </main>
-
-      <footer className="foot">
-        Decision-support. Metros flags <b>potential</b> non-compliance for officer
-        verification - it is not a final legal finding. Physical verification is
-        required for enforcement.
-      </footer>
     </div>
   );
 }
