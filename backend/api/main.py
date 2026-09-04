@@ -108,6 +108,7 @@ async def scan(
     brand: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
+    llm: bool = Form(False),
     user: dict = Depends(require_roles("officer", "admin")),
     session=Depends(get_session),
 ):
@@ -130,7 +131,8 @@ async def scan(
                                             role=user["role"]))
     report = run_scan(img, ocr, marker_mm=marker_mm, dict_name=dict_name,
                       product=product, inspection=inspection,
-                      image_file=image.filename or "upload.jpg")
+                      image_file=image.filename or "upload.jpg",
+                      extract_backend="auto" if llm else "regex")
 
     save_report(session, report, created_by=user["sub"])
     append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)

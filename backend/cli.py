@@ -83,6 +83,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         panel_area_cm2=args.panel_cm2,
         molded=args.molded,
         image_file=Path(args.image).name,
+        extract_backend="auto" if args.llm else "regex",
     )
 
     _print_summary(report)
@@ -113,6 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="principal display panel area (cm^2) for Rule 7 band")
     scan.add_argument("--molded", action="store_true",
                       help="declarations are blown/molded (higher thresholds)")
+    scan.add_argument("--llm", action="store_true",
+                      help="use the Claude extraction fast-path (needs `ant auth login`)")
     scan.add_argument("--product", help="product name")
     scan.add_argument("--out-dir", help="write JSON/HTML/DOCX report here")
     scan.set_defaults(func=_cmd_scan)

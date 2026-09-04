@@ -18,7 +18,7 @@ import numpy as np
 from .core.config import get_settings
 from .rules.catalog import RuleCatalog, load_catalog
 from .rules.engine import FieldExtraction, FontInputs, GlyphInput, evaluate
-from .extract.fields import extract_fields
+from .extract.dispatch import extract_declarations
 from .schemas.report import (
     Calibration,
     CalibrationVerdict,
@@ -148,6 +148,7 @@ def run_scan(
     image_file: str = "upload.jpg",
     captured_at: Optional[datetime] = None,
     catalog: Optional[RuleCatalog] = None,
+    extract_backend: str = "regex",
 ) -> Report:
     """Run the full pipeline and return a canonical Report."""
     settings = get_settings()
@@ -160,8 +161,7 @@ def run_scan(
                        max_residual_px=settings.max_homography_residual_px)
 
     # 2. Extraction + bbox attachment.
-    declaration_ids = [d.id for d in catalog.declarations]
-    fields = extract_fields(ocr.text, declaration_ids)
+    fields = extract_declarations(ocr.text, catalog, backend=extract_backend)
     _attach_bboxes(fields, ocr.tokens)
 
     # 3. Metric font inputs.
