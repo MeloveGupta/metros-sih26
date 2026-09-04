@@ -51,8 +51,14 @@ function ScanForm({ onReport }) {
         </p>
       </div>
 
-      <input id="pickimgs" type="file" accept="image/*" capture="environment"
-        multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+      {/* Camera input: single + capture=environment => opens the REAR camera.
+          (A `multiple` input makes browsers ignore `capture`, defaulting to the
+          front camera / chooser - so the camera path stays single-shot.) */}
+      <input id="camimg" type="file" accept="image/*" capture="environment"
+        hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+      {/* Gallery input: multiple, no capture => bulk-pick from photos. */}
+      <input id="galimg" type="file" accept="image/*" multiple
+        hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
 
       <div className={`slots${shots.length ? "" : " slots-empty"}`}>
         {shots.map((s, i) => (
@@ -62,12 +68,13 @@ function ScanForm({ onReport }) {
               aria-label={`Remove photo ${i + 1}`}>×</button>
           </figure>
         ))}
-        <label htmlFor="pickimgs" className="slot-empty">
+        <label htmlFor="camimg" className="slot-empty">
           <span className="slot-plus">+</span>
-          <span className="slot-label">{shots.length ? "Add photo" : "Add photos"}</span>
-          <span className="slot-hint">{shots.length ? `${shots.length} added` : "front, back, close-ups"}</span>
+          <span className="slot-label">{shots.length ? "Take photo" : "Take photos"}</span>
+          <span className="slot-hint">{shots.length ? `${shots.length} added` : "rear camera"}</span>
         </label>
       </div>
+      <label htmlFor="galimg" className="gallery-link">or choose from gallery</label>
 
       <label className="field">
         <span>Product name</span>

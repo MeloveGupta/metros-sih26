@@ -160,6 +160,12 @@ button { font: inherit; }
 .slots-empty .slot-plus { font-size: 2.25rem; }
 .slots-empty .slot-label { font-size: var(--t-body); }
 .slots-empty .slot-hint { font-size: var(--t-label); }
+
+.gallery-link {
+  display: inline-block; margin: 10px 0 0; font-size: var(--t-label); font-weight: 700;
+  color: var(--ink); cursor: pointer; border-bottom: 2px solid var(--ink); padding-bottom: 1px;
+}
+.gallery-link:hover { color: var(--sub); border-color: var(--sub); }
 .slot-plus { font-size: 1.75rem; font-weight: 800; line-height: 1; }
 .slot-label { font-weight: 800; text-transform: uppercase; font-size: var(--t-micro); letter-spacing: 0.02em; }
 .slot-hint { font-size: var(--t-micro); color: var(--sub); font-weight: 600; }
