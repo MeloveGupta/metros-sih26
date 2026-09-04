@@ -52,7 +52,7 @@ p { text-wrap: pretty; }
 .app { max-width: 880px; margin: 0 auto; padding: clamp(16px, 4vw, 32px) clamp(14px, 4vw, 20px) 72px; }
 
 /* ---- Masthead + ruler-strip signature ---- */
-.masthead { padding: 0 0 20px; margin-bottom: 28px; border-bottom: var(--bd) solid var(--ink); }
+.masthead { padding: 0 0 4px; margin-bottom: 22px; }
 .brand { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .wordmark {
   font-family: var(--font);

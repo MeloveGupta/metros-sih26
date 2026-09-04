@@ -4,7 +4,6 @@ import ReportView from "./ReportView.jsx";
 
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
-  const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -31,7 +30,7 @@ function ScanForm({ onReport }) {
     setBusy(true);
     setErr("");
     try {
-      onReport(await scan({ files: shots.map((s) => s.file), productName }));
+      onReport(await scan({ files: shots.map((s) => s.file) }));
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -75,12 +74,6 @@ function ScanForm({ onReport }) {
         </label>
       </div>
       <label htmlFor="galimg" className="gallery-link">or choose from gallery</label>
-
-      <label className="field">
-        <span>Product name</span>
-        <input value={productName} placeholder="optional"
-          onChange={(e) => setProductName(e.target.value)} />
-      </label>
 
       <button className="cta" type="submit" disabled={busy}>
         {busy ? "Analysing…" : "Scan product"}
