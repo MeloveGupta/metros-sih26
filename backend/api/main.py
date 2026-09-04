@@ -166,3 +166,19 @@ def officer_action(scan_id: str, declaration_id: str = Form(...), action: str = 
                  target=f"{scan_id}/{declaration_id}", reason=reason)
     return {"status": "recorded", "scan_id": scan_id, "declaration_id": declaration_id,
             "action": action}
+
+
+# --- Serve the built frontend (single origin; no dev server / HMR reloads) ---
+# Mounted last so every API route above takes priority. Run `make frontend-build`
+# to produce frontend/dist, then tunnel to this server (:8000).
+_DIST = get_settings().repo_root / "frontend" / "dist"
+if _DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse as _FileResponse
+
+    @app.get("/", include_in_schema=False)
+    def _index():
+        return _FileResponse(str(_DIST / "index.html"))
+
+    # assets/ and other built files
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="frontend")
