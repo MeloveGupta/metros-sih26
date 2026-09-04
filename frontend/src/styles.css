@@ -32,5 +32,14 @@ th { background: #f1f3f4; }
 .pill.s-potential_non_compliance { background: #fef0e0; }
 .pill.s-not_detected { background: #fce8e8; }
 .pill.s-not_assessable { background: #eee; }
+.camera { margin: 10px 0; }
+.viewfinder { position: relative; background: #000; border-radius: 8px; overflow: hidden; }
+.viewfinder video { display: block; width: 100%; max-height: 60vh; object-fit: contain; }
+.guide { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 10px; font-size: 12px;
+  color: #fff; background: rgba(0,0,0,0.55); text-align: center; }
+.camrow { display: flex; gap: 10px; margin-top: 8px; }
+.ghost { background: #fff; color: #1a73e8; border: 1px solid var(--line); }
+.preview { margin: 10px 0; }
+.preview img { max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
 .dl { display: inline-block; margin-top: 8px; color: #1a73e8; }
 footer { color: var(--na); font-size: 12px; margin-top: 24px; }

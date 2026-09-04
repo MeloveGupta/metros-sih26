@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { getToken, login, logout, scan } from "./api.js";
 import ReportView from "./ReportView.jsx";
+import CameraCapture from "./CameraCapture.jsx";
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState("officer@x.gov");
@@ -32,15 +33,23 @@ function Login({ onLogin }) {
 
 function ScanForm({ onReport }) {
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
   const [labelText, setLabelText] = useState("");
   const [markerMm, setMarkerMm] = useState("40");
   const [productName, setProductName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  function pick(f) {
+    setFile(f);
+    setErr("");
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(f ? URL.createObjectURL(f) : "");
+  }
+
   async function submit(e) {
     e.preventDefault();
-    if (!file) return setErr("Choose a product image first.");
+    if (!file) return setErr("Capture or choose a product image first.");
     setBusy(true);
     setErr("");
     try {
@@ -57,20 +66,30 @@ function ScanForm({ onReport }) {
     <form className="card" onSubmit={submit}>
       <h2>Scan a packaged product</h2>
       <p className="hint">
-        Place the printed ArUco calibration card in frame, in the same plane as the
-        label, so letter height can be measured in millimetres.
+        Frame the product with the printed ArUco calibration card in the same plane
+        as the label, so letter height can be measured in millimetres.
       </p>
-      <label>Product image
-        <input type="file" accept="image/*"
-          onChange={(e) => setFile(e.target.files[0] || null)} /></label>
+
+      <CameraCapture onCapture={pick} />
+      <label>…or choose / take a photo
+        <input type="file" accept="image/*" capture="environment"
+          onChange={(e) => pick(e.target.files[0] || null)} /></label>
+
+      {previewUrl && (
+        <div className="preview">
+          <img src={previewUrl} alt="captured product" />
+          <span className="muted">{file?.name}</span>
+        </div>
+      )}
+
       <label>Marker size (mm)
         <input value={markerMm} onChange={(e) => setMarkerMm(e.target.value)} /></label>
       <label>Product name (optional)
         <input value={productName} onChange={(e) => setProductName(e.target.value)} /></label>
-      <label>Label text (optional — offline OCR bypass)
+      <label>Label text (optional — paste if OCR/LLM not enabled)
         <textarea rows={4} value={labelText}
           onChange={(e) => setLabelText(e.target.value)}
-          placeholder="Paste the label text if PaddleOCR is not installed" /></label>
+          placeholder="MRP Rs. 45.00 (incl. of all taxes)&#10;Net Qty 90 g&#10;Mfg Aug 2026" /></label>
       <button type="submit" disabled={busy}>{busy ? "Scanning…" : "Scan"}</button>
       {err && <p className="err">{err}</p>}
     </form>
