@@ -14,6 +14,8 @@ RUN printf 'server {\n\
   root /usr/share/nginx/html;\n\
   location /scan  { proxy_pass http://api:8000; }\n\
   location /scans { proxy_pass http://api:8000; }\n\
+  location /stats { proxy_pass http://api:8000; }\n\
+  location /users { proxy_pass http://api:8000; }\n\
   location /auth  { proxy_pass http://api:8000; }\n\
   location /health { proxy_pass http://api:8000; }\n\
   location / { try_files $uri /index.html; }\n\

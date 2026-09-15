@@ -30,11 +30,10 @@ python-docx>=1.1        # editable DOCX report (PS requires "PDF and editable fo
 
 # --- DB ---
 SQLAlchemy>=2.0
-# psycopg[binary] only needed for PostgreSQL; SQLite (default) needs nothing.
-# psycopg[binary]>=3.2
-
-# --- Storage (optional; only for MinIO/S3 media) ---
-# minio>=7.2
+# psycopg[binary] only needed for PostgreSQL; SQLite (default, local dev) needs
+# nothing, so this stays a real dependency rather than an optional extra --
+# the Docker Compose deployment always runs against Postgres.
+psycopg[binary]>=3.2
 
 # --- Auth ---
 pyjwt>=2.10
