@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from backend.reports.render import render_html, render_json, render_pdf
+from backend.reports.render import render_docx, render_html, render_json, render_pdf
 from backend.schemas.report import (
     Calibration,
     CalibrationVerdict,
@@ -86,3 +86,23 @@ def test_render_pdf_writes_file(sample_report, tmp_path):
         pytest.skip(f"WeasyPrint native stack unavailable: {exc}")
     assert out.exists() and out.stat().st_size > 0
     assert out.read_bytes()[:5] == b"%PDF-"  # valid PDF header
+
+
+def test_render_docx_has_key_content(sample_report, tmp_path):
+    docx = pytest.importorskip("docx")
+    out = tmp_path / "report.docx"
+    render_docx(sample_report, out)
+    assert out.exists() and out.stat().st_size > 0
+
+    document = docx.Document(str(out))
+    text = "\n".join(p.text for p in document.paragraphs)
+    for table in document.tables:
+        for row in table.rows:
+            text += "\n" + "\n".join(cell.text for cell in row.cells)
+
+    assert "Rule 6(1)(e)" in text
+    assert "MRP Rs. 45.00" in text
+    assert "Declarations" in text and "Rule 6" in text
+    assert "Letter height" in text and "Rule 7" in text
+    assert "Evidence" in text and "legal basis" in text
+    assert "VIOLATION" not in text.upper()

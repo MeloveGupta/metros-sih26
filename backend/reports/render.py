@@ -1,9 +1,10 @@
 """Render a Report into JSON, HTML, PDF, and DOCX.
 
 One canonical `Report` (schemas.report) drives every format, so they never
-diverge. HTML is the intermediate for PDF (WeasyPrint). DOCX is built directly
-PDF rendering is optional at runtime: if WeasyPrints native
-stack is unavailable, `render_pdf` raises a clear error rather than failing
+diverge. HTML is the intermediate for PDF (WeasyPrint); DOCX is built
+directly with python-docx, mirroring the same section order. Both PDF and
+DOCX rendering are optional at runtime: if the underlying library isn't
+available, the render function raises a clear error rather than failing
 silently.
 """
 from __future__ import annotations
@@ -60,4 +61,159 @@ def render_pdf(report: Report, out_path: Path, template_dir: Optional[Path] = No
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     HTML(string=html).write_pdf(str(out_path))
+    return out_path
+
+
+def _status_text(status) -> str:
+    return status.value.replace("_", " ")
+
+
+def _add_findings_table(doc, rows, headers) -> None:
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = "Light Grid Accent 1"
+    for cell, text in zip(table.rows[0].cells, headers):
+        cell.text = text
+    for values in rows:
+        cells = table.add_row().cells
+        for cell, text in zip(cells, values):
+            cell.text = text
+
+
+def render_docx(report: Report, out_path: Path) -> Path:
+    """Render to an editable DOCX. Mirrors the PDF's section order/content
+    from the same `Report` object, so the two formats never diverge."""
+    try:
+        from docx import Document  # heavy-ish; import lazily like render_pdf
+    except Exception as exc:  # ImportError
+        raise MetrosError(
+            "DOCX rendering requires python-docx. Install per requirements.txt. "
+            f"Underlying error: {exc}"
+        ) from exc
+
+    doc = Document()
+
+    doc.add_heading("METROS", level=0)
+    doc.add_paragraph(f"Legal Metrology compliance report — "
+                      f"{report.ref_no or report.report_id[:8]}")
+    doc.add_paragraph(f"Generated: {report.generated_at}")
+
+    doc.add_heading(f"Disposition: {_status_text(report.disposition).upper()}", level=1)
+    doc.add_paragraph(
+        "Decision-support. Potential non-compliance flagged for officer verification. "
+        "Not a final legal finding; physical verification required for enforcement."
+    )
+
+    if report.extraction:
+        reader = {"llm": "AI reader", "label_text": "pasted label text",
+                 "ocr_regex": "OCR fallback"}.get(report.extraction.backend_used, "OCR fallback")
+        line = f"Reader: {reader}"
+        if report.extraction.llm_error:
+            line += f" — AI reader failed: {report.extraction.llm_error}"
+        doc.add_paragraph(line)
+        for w in report.extraction.warnings:
+            doc.add_paragraph(f"Warning: {w}")
+
+    if report.product.name or report.product.brand:
+        doc.add_heading("Product", level=1)
+        doc.add_paragraph(f"Name: {report.product.name or '-'}")
+        doc.add_paragraph(f"Brand: {report.product.brand or '-'}")
+        doc.add_paragraph(f"Category: {report.product.category or '-'}")
+        doc.add_paragraph(f"Source: {report.product.source or '-'}")
+
+    doc.add_heading("01 Declarations · Rule 6", level=1)
+    _add_findings_table(
+        doc,
+        [(d.label, d.clause_ref.clause, d.extracted or "not found on pack", _status_text(d.status))
+         for d in report.declarations],
+        ["Declaration", "Clause", "Extracted", "Status"],
+    )
+
+    doc.add_heading("02 Letter height · Rule 7", level=1)
+    cal = report.calibration
+    cal_line = f"Calibration: {_status_text(cal.verdict)}"
+    if cal.mm_per_pixel:
+        cal_line += f" · {cal.mm_per_pixel:.5f} mm/px"
+    if cal.corner_jitter_px is not None:
+        cal_line += f" · corner jitter {cal.corner_jitter_px:.2f}px"
+    if cal.reason:
+        cal_line += f" · {cal.reason}"
+    doc.add_paragraph(cal_line)
+
+    fa = report.font_analysis
+    if fa.panel_area_cm2 and fa.table_i_band:
+        doc.add_paragraph(
+            f"Principal display panel area {fa.panel_area_cm2.value:.1f} ± "
+            f"{fa.panel_area_cm2.uncertainty:.1f} cm² → Table-I band "
+            f"{fa.table_i_band.area_band}, minimum letter height "
+            f"{fa.table_i_band.min_height_mm} mm."
+        )
+    if fa.items:
+        _add_findings_table(
+            doc,
+            [(
+                i.declaration_id,
+                f"{i.height_mm.value:.2f} ± {i.height_mm.uncertainty:.2f} mm" if i.height_mm else "-",
+                f"{i.threshold_mm:.1f} mm" if i.threshold_mm is not None else "-",
+                _status_text(i.status),
+                i.reason or "",
+            ) for i in fa.items],
+            ["Label text", "Measured height", "Threshold", "Status", "Reason"],
+        )
+    else:
+        doc.add_paragraph("No letter-height measurement (no Metros card in frame, or uncalibrated).")
+
+    if report.placement:
+        doc.add_heading("03 Placement · Rule 8", level=1)
+        _add_findings_table(
+            doc,
+            [(p.label, p.clause_ref.clause, p.note or "", _status_text(p.status))
+             for p in report.placement],
+            ["Item", "Clause", "Note", "Status"],
+        )
+
+    if report.readability:
+        doc.add_heading("04 Readability · Rule 9", level=1)
+        _add_findings_table(
+            doc,
+            [(p.label, p.clause_ref.clause, p.note or "", _status_text(p.status))
+             for p in report.readability],
+            ["Item", "Clause", "Note", "Status"],
+        )
+
+    if report.officer_actions:
+        doc.add_heading("05 Officer verification", level=1)
+        _add_findings_table(
+            doc,
+            [(
+                a.declaration_id,
+                "verified compliant" if a.action == "verified_compliant" else "issue confirmed",
+                a.reason or "-",
+            ) for a in report.officer_actions],
+            ["Item", "Decision", "Officer note"],
+        )
+        finalized_line = f"Finalized by {report.finalized_by or '-'}"
+        if report.finalized_at:
+            finalized_line += f" on {report.finalized_at}"
+        doc.add_paragraph(finalized_line + ".")
+    elif report.summary.required_actions:
+        doc.add_heading("05 Officer actions required", level=1)
+        for a in report.summary.required_actions:
+            doc.add_paragraph(a, style="List Bullet")
+        doc.add_paragraph("Not yet verified by an officer.")
+
+    doc.add_heading("06 Evidence & legal basis", level=1)
+    doc.add_paragraph(f"Original file: {report.evidence.original.file}")
+    doc.add_paragraph(
+        f"Resolution: {report.evidence.original.width} × {report.evidence.original.height} px"
+    )
+    doc.add_paragraph(f"SHA-256: {report.evidence.original.sha256}")
+    if report.legal_basis.get("statute"):
+        doc.add_paragraph(f"Statute: {report.legal_basis['statute']}")
+    doc.add_paragraph(f"Rule catalog: {report.rule_catalog.version}")
+    doc.add_paragraph(report.evidence.integrity_note)
+    doc.add_paragraph(report.limitations)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(out_path))
     return out_path

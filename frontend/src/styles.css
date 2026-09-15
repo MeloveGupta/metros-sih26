@@ -305,12 +305,14 @@ button { font: inherit; }
   font-weight: 700; font-size: var(--t-label);
 }
 
+.dlrow { display: flex; gap: 12px; flex-wrap: wrap; }
 .dl {
   display: inline-block; margin-top: 26px; font-weight: 800; font-size: var(--t-body);
   text-transform: uppercase; letter-spacing: 0.03em; color: var(--card); background: var(--ink);
   border: var(--bd) solid var(--ink); box-shadow: var(--shadow-sm); padding: 12px 18px; text-decoration: none;
   transition: transform .06s, box-shadow .06s; max-width: 100%; cursor: pointer;
 }
+.dl.ghost { color: var(--ink); background: var(--card); }
 .dl:hover { transform: translate(2px, 2px); box-shadow: var(--shadow-press); }
 
 .muted { color: var(--sub); }

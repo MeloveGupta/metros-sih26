@@ -67,6 +67,14 @@ def test_scan_no_auth_and_fetch(client):
         assert pdf.headers["content-type"] == "application/pdf"
         assert pdf.content[:5] == b"%PDF-"
 
+    docx = client.get(f"/scans/{scan_id}/report.docx")
+    assert docx.status_code in (200, 503)
+    if docx.status_code == 200:
+        assert docx.headers["content-type"] == (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        assert docx.content[:2] == b"PK"  # DOCX is a zip archive
+
 
 def test_scan_without_label_text_still_works(client):
     r = client.post(

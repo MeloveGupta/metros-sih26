@@ -8,6 +8,7 @@ Endpoints:
   GET  /scans                     search the repository
   GET  /scans/{id}                fetch a stored report
   GET  /scans/{id}/report.pdf     download the PDF report
+  GET  /scans/{id}/report.docx    download the editable DOCX report
   POST /scans/{id}/finalize       officer verification (audited)
   GET  /health
 
@@ -46,7 +47,7 @@ from ..db.repository import (
     update_report,
 )
 from ..pipeline import run_scan
-from ..reports.render import render_pdf
+from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
 from ..vision.ocr import (
     OcrResult,
@@ -254,6 +255,23 @@ def download_pdf(scan_id: str, session=Depends(get_session),
     except MetrosError as exc:
         raise HTTPException(status_code=503, detail=f"PDF rendering unavailable: {exc}")
     return FileResponse(str(out), filename=f"metros-{scan_id}.pdf", media_type="application/pdf")
+
+
+@app.get("/scans/{scan_id}/report.docx")
+def download_docx(scan_id: str, session=Depends(get_session),
+                  _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
+    report = get_report(session, scan_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
+    try:
+        render_docx(report, out)
+    except MetrosError as exc:
+        raise HTTPException(status_code=503, detail=f"DOCX rendering unavailable: {exc}")
+    return FileResponse(
+        str(out), filename=f"metros-{scan_id}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 class FinalizeAction(BaseModel):

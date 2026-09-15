@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { downloadPdf, finalize } from "./api.js";
+import { downloadDocx, downloadPdf, finalize } from "./api.js";
 
 function Pill({ status }) {
   return <span className={`pill s-${status}`}>{status.replace(/_/g, " ")}</span>;
@@ -277,10 +277,16 @@ export default function ReportView({ report, onUpdate }) {
 
       {/* Download only after the officer finalizes (or when nothing needs review). */}
       {(report.finalized_by || itemsNeedingReview(report).length === 0) && (
-        <button type="button" className="dl"
-          onClick={() => downloadPdf(report.report_id).catch((e) => alert(e.message || e))}>
-          Download PDF report
-        </button>
+        <div className="dlrow">
+          <button type="button" className="dl"
+            onClick={() => downloadPdf(report.report_id).catch((e) => alert(e.message || e))}>
+            Download PDF report
+          </button>
+          <button type="button" className="dl ghost"
+            onClick={() => downloadDocx(report.report_id).catch((e) => alert(e.message || e))}>
+            Download DOCX report
+          </button>
+        </div>
       )}
     </section>
   );

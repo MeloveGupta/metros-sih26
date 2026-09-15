@@ -63,21 +63,29 @@ export async function listScans() {
   return _asJson(res, "Could not load scans");
 }
 
-export async function downloadPdf(reportId) {
-  const res = await fetch(`/scans/${reportId}/report.pdf`, { headers: _authHeaders() });
+async function _downloadFile(url, filename) {
+  const res = await fetch(url, { headers: _authHeaders() });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Download failed (${res.status})`);
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = `metros-${reportId}.pdf`;
+  a.href = objectUrl;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(objectUrl);
+}
+
+export function downloadPdf(reportId) {
+  return _downloadFile(`/scans/${reportId}/report.pdf`, `metros-${reportId}.pdf`);
+}
+
+export function downloadDocx(reportId) {
+  return _downloadFile(`/scans/${reportId}/report.docx`, `metros-${reportId}.docx`);
 }
 
 export async function finalize(reportId, { officerName, actions }) {
