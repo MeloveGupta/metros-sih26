@@ -25,7 +25,9 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from ..core.config import get_settings
+import logging
+
+from ..core.config import get_settings, marker_size_mismatch_warning
 from ..core.errors import MetrosError
 from ..db.repository import (
     append_audit,
@@ -49,6 +51,10 @@ from ..vision.ocr import (
 )
 
 app = FastAPI(title="Metros API", version="0.1.0")
+
+_marker_warning = marker_size_mismatch_warning()
+if _marker_warning:
+    logging.getLogger(__name__).warning(_marker_warning)
 
 _engine = make_engine()
 init_db(_engine)

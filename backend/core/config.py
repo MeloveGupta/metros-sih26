@@ -75,3 +75,20 @@ class Settings:
 def get_settings() -> Settings:
     """Return a fresh settings snapshot from the current environment."""
     return Settings()
+
+
+def marker_size_mismatch_warning(settings: Settings | None = None) -> str | None:
+    """A warning message if MARKER_SIZE_MM doesn't match the card generator's
+    own default, else None. Every millimetre figure in a report is wrong if
+    the configured marker size doesn't match what was actually printed."""
+    from ..vision.card import DEFAULT_MARKER_MM  # lazy: avoid a core->vision load-order dep
+
+    settings = settings or get_settings()
+    if settings.marker_size_mm == DEFAULT_MARKER_MM:
+        return None
+    return (
+        f"MARKER_SIZE_MM={settings.marker_size_mm:.1f} differs from the "
+        f"calibration card generator's default ({DEFAULT_MARKER_MM:.1f} mm) -- "
+        "make sure scripts/gen_calibration_card.py was run with a matching "
+        "--marker-mm, or every millimetre measurement will be wrong."
+    )
