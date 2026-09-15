@@ -114,6 +114,15 @@ def test_font_absolute_has_no_height_floor(catalog):
     assert "min_height_mm_molded" not in catalog.font_absolute
 
 
+# --- 2.3: consumer-care, Rule 6(2), all four parts mandatory ---
+
+def test_consumer_care_catalog_entry_cites_gsr_385(catalog):
+    rule = catalog.declaration("consumer_care")
+    assert rule.gazette == "GSR 385(E), 14-05-2015"
+    assert rule.effective_from == "2015-05-14"
+    assert "mandatory" in rule.label.lower()
+
+
 def test_font_far_from_marker_is_not_assessable(catalog):
     # Text 6 marker-side-lengths from the marker centre (beyond the default
     # 4-side extrapolation limit) can't be trusted, even if it looks compliant.

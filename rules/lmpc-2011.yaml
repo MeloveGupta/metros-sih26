@@ -87,9 +87,13 @@ declarations:
     # for a single item sold by number (Rule 6(11) proviso).
 
   - id: consumer_care
-    label: Consumer-care - name, address, telephone, e-mail for complaints
+    label: Consumer-care - name, address, telephone and e-mail for complaints (all mandatory)
     clause: "Rule 6(2)"
+    gazette: "GSR 385(E), 14-05-2015"
+    effective_from: "2015-05-14"
     checks: [present, contact_format]
+    # As substituted by GSR 385(E): the words "if available" were removed, so
+    # name, address, telephone AND e-mail are all mandatory (no optionality).
 
 # --- Rule 7: principal display panel - letter/numeral height (in mm) ---
 # Height depends on the AREA of the principal display panel in cm^2

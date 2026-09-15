@@ -40,6 +40,15 @@ def test_client_ignores_oauth_token_env(monkeypatch):
         llm_mod._client()
 
 
+def test_declarations_block_states_consumer_care_is_fully_mandatory():
+    from backend.rules.catalog import load_catalog
+
+    catalog = load_catalog()
+    block = llm_mod._declarations_block(catalog, ["consumer_care"])
+    assert "telephone" in block and "e-mail" in block
+    assert "mandatory" in block
+
+
 def test_no_oauth_token_path_in_backend_or_scripts():
     """Belt-and-suspenders: the OAuth/keychain path must not exist in code."""
     import re

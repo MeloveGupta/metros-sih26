@@ -118,7 +118,8 @@ def _declarations_block(catalog: RuleCatalog, declaration_ids: List[str]) -> str
         "Declarations to extract:\n" + "\n".join(wanted)
         + "\n\nFormat rules: MRP must read like 'MRP Rs./₹ x.xx (incl. of all "
         "taxes)' for format_pass=true; dates need month & year; consumer-care "
-        "needs a phone or email; net quantity needs a standard unit."
+        "needs a name/address, telephone number AND e-mail -- Rule 6(2) makes "
+        "all four mandatory, not just one; net quantity needs a standard unit."
     )
 
 
