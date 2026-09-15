@@ -77,6 +77,15 @@ declarations:
     #   "MRP Rs./₹ xx.xx incl. of all taxes"
     #   "MRP Rs./₹ xx.xx (incl. of all taxes)"
 
+  - id: unit_sale_price
+    label: Unit sale price (Rs. per standard unit - gram/kg, ml/litre, or number)
+    clause: "Rule 6(11)"
+    gazette: "GSR 779(E), 02-11-2021, as substituted by GSR 226(E), 28-03-2022"
+    effective_from: "2022-10-01"
+    checks: [present, usp_unit_basis, usp_arithmetic]
+    # Not required where the retail sale price equals the unit sale price, or
+    # for a single item sold by number (Rule 6(11) proviso).
+
   - id: consumer_care
     label: Consumer-care - name, address, telephone, e-mail for complaints
     clause: "Rule 6(2)"

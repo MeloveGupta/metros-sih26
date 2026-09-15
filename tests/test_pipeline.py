@@ -15,6 +15,7 @@ Tomato Ketchup
 Manufactured by: FoodCo Pvt Ltd, Plot 12, Pune, Maharashtra 411001
 Net Qty 200 g
 MRP Rs. 45.00 (incl. of all taxes)
+Unit sale price: Rs. 0.23 per g
 Mfg Aug 2026
 Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567
 """

@@ -60,6 +60,22 @@ _CARE_CUE = re.compile(r"\b(consumer\s+care|customer\s+care|customer\s+service|h
                        re.IGNORECASE)
 _ORIGIN_CUE = re.compile(r"\b(country\s+of\s+origin|made\s+in|imported)\b", re.IGNORECASE)
 
+# Unit sale price, e.g. "Rs. 5.00 per 100g" -> "Rs. 0.05 per g" isn't required;
+# officers print the per-unit price directly, e.g. "Rs. 2.25/g" or "Rs. 225 per kg".
+_USP_CUE = re.compile(
+    r"(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:/|per)\s*"
+    r"(kilograms?|kgs?|grams?|gms?|g|litres?|liters?|ltrs?|l|"
+    r"millilitres?|milliliters?|ml|centimet(?:res?|ers?)|cm|met(?:res?|ers?)|m|"
+    r"numbers?|units?|pieces?|pcs?)\b",
+    re.IGNORECASE,
+)
+_USP_MASS_BASE = {"g": 1, "gm": 1, "gms": 1, "gram": 1, "grams": 1,
+                  "kg": 1000, "kgs": 1000, "kilogram": 1000, "kilograms": 1000}
+_USP_VOLUME_BASE = {"ml": 1, "millilitre": 1, "millilitres": 1, "milliliter": 1, "milliliters": 1,
+                    "l": 1000, "litre": 1000, "litres": 1000, "liter": 1000, "liters": 1000,
+                    "ltr": 1000, "ltrs": 1000}
+_USP_NUMBER_UNITS = {"number", "numbers", "unit", "units", "piece", "pieces", "pc", "pcs"}
+
 
 def _first_line(text: str, start: int) -> str:
     """Return the text from `start` up to the next newline, trimmed."""
@@ -116,6 +132,103 @@ def validate_consumer_care(window: str) -> tuple[bool, str]:
     if missing:
         return False, "consumer-care block is missing: " + ", ".join(missing)
     return True, "name/address + telephone + e-mail present"
+
+
+def _mrp_amount(mrp_field: FieldExtraction) -> Optional[float]:
+    if not mrp_field.present or not mrp_field.value:
+        return None
+    m = _MRP_AMOUNT.search(mrp_field.value)
+    return float(m.group(1).replace(",", "")) if m else None
+
+
+def _net_qty_base(net_qty_field: FieldExtraction) -> tuple[Optional[float], Optional[str]]:
+    """(value_in_grams_or_ml_or_count, 'mass'|'volume'|'number') from a
+    parsed net-quantity value, or (None, None) if it can't be classified."""
+    if not net_qty_field.present or not net_qty_field.value:
+        return None, None
+    m = _QTY_NUM.search(net_qty_field.value)
+    if not m:
+        return None, None
+    num = float(m.group(1).replace(",", ""))
+    unit = m.group(2).lower()
+    if unit in _USP_MASS_BASE:
+        return num * _USP_MASS_BASE[unit], "mass"
+    if unit in _USP_VOLUME_BASE:
+        return num * _USP_VOLUME_BASE[unit], "volume"
+    if unit in ("n", "no", "nos", "u", "unit", "units", "pc", "pcs", "piece", "pieces"):
+        return num, "number"
+    return None, None
+
+
+def validate_unit_sale_price(
+    usp_value: float, usp_unit: str, mrp_amount: Optional[float],
+    qty_base: Optional[float], qty_kind: Optional[str],
+) -> tuple[bool, str]:
+    """Rule 6(11): unit basis (per gram/kg, per ml/litre, per number) must
+    match the net quantity's magnitude, and the value must be MRP / net
+    quantity (converted to the declared unit), within rounding tolerance."""
+    usp_unit = usp_unit.lower()
+    if qty_kind == "mass":
+        base_unit_size = _USP_MASS_BASE.get(usp_unit)
+        if base_unit_size is None:
+            return False, "unit sale price must be per gram or per kilogram for a solid"
+        if qty_base < 1000 and base_unit_size != 1:
+            return False, "net quantity is under 1 kg; unit sale price should be declared per gram"
+        if qty_base >= 1000 and base_unit_size != 1000:
+            return False, "net quantity is 1 kg or more; unit sale price should be declared per kilogram"
+    elif qty_kind == "volume":
+        base_unit_size = _USP_VOLUME_BASE.get(usp_unit)
+        if base_unit_size is None:
+            return False, "unit sale price must be per ml or per litre for a liquid"
+        if qty_base < 1000 and base_unit_size != 1:
+            return False, "net volume is under 1 litre; unit sale price should be declared per ml"
+        if qty_base >= 1000 and base_unit_size != 1000:
+            return False, "net volume is 1 litre or more; unit sale price should be declared per litre"
+    elif qty_kind == "number":
+        if usp_unit not in _USP_NUMBER_UNITS:
+            return False, "sold by number; unit sale price should be declared per number/unit"
+        base_unit_size = 1
+    else:
+        return True, "net quantity unknown; unit basis not checked"
+
+    if mrp_amount is None or not qty_base:
+        return True, "MRP or net quantity not available for an arithmetic cross-check"
+
+    expected = mrp_amount / (qty_base / base_unit_size)
+    if abs(expected - usp_value) > max(0.01, expected * 0.02):
+        return False, f"declared Rs. {usp_value:.2f} but MRP ÷ net quantity = Rs. {expected:.2f}"
+    return True, "unit basis and arithmetic check out"
+
+
+def parse_unit_sale_price(text: str) -> FieldExtraction:
+    net_qty = parse_net_quantity(text)
+    mrp = parse_mrp(text)
+    qty_base, qty_kind = _net_qty_base(net_qty)
+
+    # Not applicable: a single item sold by number (the price already is the
+    # unit price) -- an officer-review nuance, not auto-detectable beyond this.
+    if qty_kind == "number" and qty_base == 1:
+        return FieldExtraction(id="unit_sale_price", present=False, applicable=False)
+
+    m = _USP_CUE.search(text)
+    if not m:
+        return FieldExtraction(id="unit_sale_price", present=False)
+
+    usp_value = float(m.group(1).replace(",", ""))
+    usp_unit = m.group(2).lower()
+    mrp_amount = _mrp_amount(mrp)
+
+    # Proviso: not required where the retail sale price equals the unit sale price.
+    if mrp_amount is not None and abs(mrp_amount - usp_value) < 0.01:
+        return FieldExtraction(id="unit_sale_price", present=True, value=m.group(0),
+                               applicable=False)
+
+    ok, detail = validate_unit_sale_price(usp_value, usp_unit, mrp_amount, qty_base, qty_kind)
+    return FieldExtraction(
+        id="unit_sale_price", present=True, value=m.group(0),
+        format_pass=ok, format_detail=None if ok else detail,
+        format_pattern="Rs. x.xx per <standard unit> (Rule 6(11))",
+    )
 
 
 def parse_manufacturer(text: str) -> FieldExtraction:
@@ -255,6 +368,7 @@ _PARSERS: Dict[str, Callable[[str], FieldExtraction]] = {
     "mrp": parse_mrp,
     "consumer_care": parse_consumer_care,
     "country_of_origin": parse_country_of_origin,
+    "unit_sale_price": parse_unit_sale_price,
 }
 
 

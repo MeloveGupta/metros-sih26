@@ -8,6 +8,7 @@ from backend.extract.fields import (
     parse_manufacturer,
     parse_mrp,
     parse_net_quantity,
+    parse_unit_sale_price,
 )
 
 
@@ -124,6 +125,54 @@ def test_manufacturer_pin_scoped_to_manufacturer_block():
     assert f.present is True
     assert f.format_pass is False
     assert "no PIN code" in f.format_detail
+
+
+# --- 2.1: unit sale price, Rule 6(11) ---
+
+def test_unit_sale_price_present_correct():
+    text = "Net Qty 500 g\nMRP Rs. 45.00 (incl. of all taxes)\nUnit sale price: Rs. 0.09 per g"
+    f = parse_unit_sale_price(text)
+    assert f.present is True
+    assert f.applicable is True
+    assert f.format_pass is True
+
+
+def test_unit_sale_price_wrong_unit_basis():
+    # Net qty is under 1kg, so this should be declared per gram, not per kg.
+    text = "Net Qty 500 g\nMRP Rs. 45.00 (incl. of all taxes)\nUnit sale price: Rs. 90.00 per kg"
+    f = parse_unit_sale_price(text)
+    assert f.present is True
+    assert f.format_pass is False
+    assert "per gram" in f.format_detail
+
+
+def test_unit_sale_price_arithmetic_mismatch():
+    # Correct basis (per gram) but the value doesn't match MRP / net quantity.
+    text = "Net Qty 500 g\nMRP Rs. 45.00 (incl. of all taxes)\nUnit sale price: Rs. 0.50 per g"
+    f = parse_unit_sale_price(text)
+    assert f.present is True
+    assert f.format_pass is False
+    assert "0.09" in f.format_detail  # the correct computed figure
+
+
+def test_unit_sale_price_missing():
+    text = "Net Qty 500 g\nMRP Rs. 45.00 (incl. of all taxes)"
+    f = parse_unit_sale_price(text)
+    assert f.present is False
+    assert f.applicable is True
+
+
+def test_unit_sale_price_not_applicable_single_number_item():
+    text = "Net Qty 1 N\nMRP Rs. 10.00 (incl. of all taxes)"
+    f = parse_unit_sale_price(text)
+    assert f.applicable is False
+
+
+def test_unit_sale_price_not_applicable_when_equal_to_mrp():
+    text = "Net Qty 1 kg\nMRP Rs. 200.00 (incl. of all taxes)\nUnit sale price: Rs. 200.00 per kg"
+    f = parse_unit_sale_price(text)
+    assert f.present is True
+    assert f.applicable is False
 
 
 def test_mrp_incl_taxes_scoped_to_mrp_line():
