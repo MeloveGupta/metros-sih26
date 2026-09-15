@@ -27,6 +27,25 @@ def test_catalog_loads_and_hashes(catalog):
     assert mrp.clause.startswith("Rule 6")
 
 
+# --- 2.11: catalog housekeeping ---
+
+def test_every_declaration_and_placement_rule_cites_gazette_and_date(catalog):
+    for rule in list(catalog.declarations) + list(catalog.placement):
+        assert rule.gazette, f"{rule.id} is missing a gazette citation"
+        assert rule.effective_from, f"{rule.id} is missing an effective_from date"
+
+
+def test_mrp_has_no_rounding_check_and_cites_current_gazette(catalog):
+    mrp = catalog.declaration("mrp")
+    assert mrp.gazette == "GSR 779(E), 02-11-2021, as amended by GSR 226(E), 28-03-2022"
+    assert mrp.effective_from == "2022-10-01"
+
+
+def test_catalog_version_bumped():
+    catalog = load_catalog()
+    assert "catalog v2" in catalog.version
+
+
 def test_band_selection_matches_table_i(catalog):
     # Real Table-I (GSR 629(E)): A<50 -> 1.0mm; 100<=A<500 -> 2.5mm; A>=2500 -> 6.0mm
     assert catalog.select_band(30).min_height_mm == 1.0

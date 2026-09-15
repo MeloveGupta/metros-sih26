@@ -7,7 +7,7 @@
 # principally GSR 629(E) dated 23-06-2017 (w.e.f. 01-01-2018), which replaced
 # the net-quantity font bands with area-of-panel bands.
 
-version: "2011 (as amended through 2022)"
+version: "2011 (as amended through 2022), catalog v2"
 
 # Statutory authority cited in report headers.
 statute:
@@ -40,6 +40,8 @@ declarations:
   - id: manufacturer
     label: Name & address of manufacturer / packer / importer
     clause: "Rule 6(1)(a)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
     checks: [present, address_format]
     applicability:
       food:
@@ -49,17 +51,23 @@ declarations:
 
   - id: country_of_origin
     label: Country of origin / manufacture / assembly (imported products)
-    clause: "Rule 6(1)(aa)"          # inserted GSR 629(E), w.e.f. 01-01-2018
+    clause: "Rule 6(1)(aa)"
+    gazette: "GSR 629(E), 23-06-2017"
+    effective_from: "2018-01-01"
     checks: [present_if_imported]
 
   - id: common_name
     label: Common or generic name of the commodity
     clause: "Rule 6(1)(b)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
     checks: [present]
 
   - id: net_quantity
     label: Net quantity in the standard unit of weight / measure / number
     clause: "Rule 6(1)(c)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
     checks: [present, unit_standard]
 
   - id: mfg_date
@@ -85,18 +93,27 @@ declarations:
 
   - id: best_before
     label: Best before / use-by date (perishable commodities)
-    clause: "Rule 6(1)(da)"          # inserted GSR 629(E), w.e.f. 01-01-2018
+    clause: "Rule 6(1)(da)"
+    gazette: "GSR 629(E), 23-06-2017"
+    effective_from: "2018-01-01"
     checks: [present_if_perishable, month_year_format]
 
   - id: mrp
     label: Retail sale price - MRP inclusive of all taxes, Indian currency
     clause: "Rule 6(1)(e)"
+    gazette: "GSR 779(E), 02-11-2021, as amended by GSR 226(E), 28-03-2022"
+    effective_from: "2022-10-01"
     checks: [present, mrp_format]
-    # Accepted formats (Rule 6 illustrations), rounded to nearest rupee / 50 paise:
+    # Accepted formats (Rule 6 illustrations, as substituted by GSR 629(E)
+    # w.e.f. 01-01-2018):
     #   "Maximum retail price Rs./₹ xx.xx (inclusive of all taxes)"
     #   "Max. retail price Rs./₹ xx.xx inclusive of all taxes"
     #   "MRP Rs./₹ xx.xx incl. of all taxes"
     #   "MRP Rs./₹ xx.xx (incl. of all taxes)"
+    # NOTE: the words prescribing rounding to the nearest rupee/50 paise were
+    # themselves substituted by GSR 779(E)/226(E) w.e.f. 01-10-2022 with "in
+    # Indian currency" -- there is no longer a rounding requirement in the
+    # rule text, so the engine does not check for rounding.
 
   - id: unit_sale_price
     label: Unit sale price (Rs. per standard unit - gram/kg, ml/litre, or number)
@@ -168,6 +185,8 @@ font_absolute:
 # Rule 7(1): tiny packages.
 small_package:
   clause: "Rule 7(1)"
+  gazette: "GSR 385(E), 14-05-2015"
+  effective_from: "2015-05-14"
   capacity_le_cc: 10                  # <= 10 cm^3: PDP may be an affixed card/tape
 
 # Rule 7(5), as substituted by GSR 629(E): even when a declaration's CONTENT is
@@ -177,6 +196,8 @@ small_package:
 # food/cosmetic packages to only these declaration ids.
 rule7_carveout:
   clause: "Rule 7(5)"
+  gazette: "GSR 629(E), 23-06-2017"
+  effective_from: "2018-01-01"
   declaration_ids: [net_quantity, mrp, best_before, consumer_care]
 
 # --- Rule 8: where declarations must appear on the package ---
