@@ -186,6 +186,7 @@ button { font: inherit; }
   background: var(--ink); color: var(--card);
 }
 .disp-compliant { background: var(--card); color: var(--ink); }
+.disp-needs_officer_review { background: var(--g1); color: var(--ink); }
 .notice {
   margin: 16px 0 20px; padding: 12px 14px; font-size: var(--t-label); font-weight: 600; color: var(--ink);
   background: var(--g1); border: var(--bd) solid var(--ink);

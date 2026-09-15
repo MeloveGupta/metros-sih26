@@ -38,6 +38,12 @@ class FieldExtraction:
     format_pass: Optional[bool] = None
     format_pattern: Optional[str] = None
     applicable: bool = True
+    # True when detection alone isn't enough to trust the value (e.g. an
+    # unconfirmed generic name from the regex fallback, or an LLM value that
+    # doesn't appear anywhere in the OCR text) -- forces not_assessable
+    # regardless of `present`.
+    needs_confirmation: bool = False
+    confirmation_reason: Optional[str] = None
 
 
 @dataclass
@@ -67,6 +73,8 @@ def _clause_ref(catalog: RuleCatalog, decl_id: str) -> ClauseRef:
 def _declaration_status(f: FieldExtraction) -> Tuple[Status, Optional[str]]:
     if not f.applicable:
         return Status.NOT_APPLICABLE, "rule does not apply to this commodity/category"
+    if f.needs_confirmation:
+        return Status.NOT_ASSESSABLE, f.confirmation_reason or "needs officer confirmation"
     if not f.present:
         return (
             Status.NOT_DETECTED,
@@ -239,5 +247,5 @@ def _summarize(findings: List[DeclarationFinding], fa: FontAnalysis) -> Summary:
             )
 
     assessable = s.checked - s.not_assessable - s.not_applicable
-    s.overall_confidence = round(s.compliant / assessable, 3) if assessable else 0.0
+    s.compliance_ratio = round(s.compliant / assessable, 3) if assessable else 0.0
     return s

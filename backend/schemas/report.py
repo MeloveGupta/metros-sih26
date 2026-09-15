@@ -170,7 +170,7 @@ class Summary(BaseModel):
     not_detected: int = 0
     not_assessable: int = 0
     not_applicable: int = 0
-    overall_confidence: float = 0.0
+    compliance_ratio: float = 0.0
     required_actions: List[str] = Field(default_factory=list)
 
 

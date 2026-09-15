@@ -39,7 +39,7 @@ def sample_report() -> Report:
             mm_per_pixel=0.1, corner_jitter_px=0.8, detection_confidence=0.95,
             verdict=CalibrationVerdict.CALIBRATED),
         summary=Summary(checked=2, compliant=1, potential_non_compliance=1,
-                        overall_confidence=0.5,
+                        compliance_ratio=0.5,
                         required_actions=["Verify letter height for mrp (Rule 7)"]),
         declarations=[
             DeclarationFinding(id="mrp", label="Retail sale price (MRP)",

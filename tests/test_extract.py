@@ -1,7 +1,12 @@
 """Tests for offline field extraction."""
 from __future__ import annotations
 
-from backend.extract.fields import extract_fields, parse_mrp, parse_net_quantity
+from backend.extract.fields import (
+    extract_fields,
+    parse_common_name,
+    parse_mrp,
+    parse_net_quantity,
+)
 
 
 LABEL = """
@@ -56,3 +61,22 @@ def test_missing_fields_not_present():
     fields = {f.id: f for f in extract_fields("just a name", ["mrp", "net_quantity"])}
     assert not fields["mrp"].present
     assert not fields["net_quantity"].present
+
+
+def test_common_name_found_with_hint():
+    f = parse_common_name(LABEL, hint="Tasty Masala Chips")
+    assert f.present and f.value == "Tasty Masala Chips"
+    assert f.needs_confirmation is False
+
+
+def test_common_name_not_found_with_wrong_hint():
+    f = parse_common_name(LABEL, hint="Chocolate Bar")
+    assert f.present is False
+    assert f.needs_confirmation is False  # not_detected, not unconfirmed
+
+
+def test_common_name_without_hint_needs_confirmation():
+    f = parse_common_name(LABEL)
+    assert f.present is False
+    assert f.needs_confirmation is True
+    assert f.confirmation_reason == "generic name needs officer confirmation"

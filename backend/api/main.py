@@ -98,6 +98,7 @@ async def scan(
     brand: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
+    common_name: Optional[str] = Form(None),
     llm: bool = Form(True),
     session=Depends(get_session),
 ):
@@ -128,7 +129,8 @@ async def scan(
                       product=product, inspection=inspection,
                       image_file=images[0].filename or "upload.jpg",
                       extract_backend="regex" if llm is False else "auto",
-                      label_text_provided=bool(label_text))
+                      label_text_provided=bool(label_text),
+                      common_name=common_name)
 
     save_report(session, report, created_by=user["sub"])
     append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)

@@ -72,11 +72,26 @@ def parse_manufacturer(text: str) -> FieldExtraction:
     )
 
 
-def parse_common_name(text: str) -> FieldExtraction:
-    # Generic name is context-dependent; we only assert detection, never absence
-    # with confidence. Presence is heuristic: a non-empty first descriptive line.
-    return FieldExtraction(id="common_name", present=False,
-                           value=None)  # requires product context; engine -> not_detected
+def normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def parse_common_name(text: str, hint: Optional[str] = None) -> FieldExtraction:
+    """Look for the officer-supplied generic name in the label text.
+
+    Without a hint, the regex backend can't reliably tell a "generic name"
+    line apart from a brand name or marketing copy, so it asks for officer
+    confirmation instead of guessing.
+    """
+    if hint:
+        found = normalize_ws(hint).lower() in normalize_ws(text).lower()
+        return FieldExtraction(id="common_name", present=found,
+                               value=hint if found else None)
+    return FieldExtraction(
+        id="common_name", present=False, value=None,
+        needs_confirmation=True,
+        confirmation_reason="generic name needs officer confirmation",
+    )
 
 
 def parse_net_quantity(text: str) -> FieldExtraction:
@@ -153,7 +168,6 @@ def parse_country_of_origin(text: str) -> FieldExtraction:
 
 _PARSERS: Dict[str, Callable[[str], FieldExtraction]] = {
     "manufacturer": parse_manufacturer,
-    "common_name": parse_common_name,
     "net_quantity": parse_net_quantity,
     "mfg_date": parse_mfg_date,
     "best_before": parse_best_before,
@@ -163,7 +177,8 @@ _PARSERS: Dict[str, Callable[[str], FieldExtraction]] = {
 }
 
 
-def extract_fields(text: str, declaration_ids: List[str]) -> List[FieldExtraction]:
+def extract_fields(text: str, declaration_ids: List[str],
+                   common_name_hint: Optional[str] = None) -> List[FieldExtraction]:
     """Extract each requested declaration from `text`.
 
     Unknown ids (no parser) yield a present=False extraction so the engine reports
@@ -172,6 +187,9 @@ def extract_fields(text: str, declaration_ids: List[str]) -> List[FieldExtractio
     normalized = text or ""
     out: List[FieldExtraction] = []
     for decl_id in declaration_ids:
+        if decl_id == "common_name":
+            out.append(parse_common_name(normalized, hint=common_name_hint))
+            continue
         parser: Optional[Callable[[str], FieldExtraction]] = _PARSERS.get(decl_id)
         out.append(parser(normalized) if parser else FieldExtraction(id=decl_id, present=False))
     return out

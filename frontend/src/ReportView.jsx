@@ -177,8 +177,8 @@ export default function ReportView({ report, onUpdate }) {
           </div>
         ))}
         <div className="kpi">
-          <span className="kpi-n mono">{Math.round(s.overall_confidence * 100)}%</span>
-          <span className="kpi-l">Confidence</span>
+          <span className="kpi-n mono">{Math.round(s.compliance_ratio * 100)}%</span>
+          <span className="kpi-l">Compliant (of assessable)</span>
         </div>
       </div>
 

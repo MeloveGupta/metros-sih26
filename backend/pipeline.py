@@ -239,10 +239,10 @@ def _to_calibration_schema(cal: CalibrationResult) -> Calibration:
 
 def _overall_disposition(declarations, font_items) -> Status:
     statuses = [d.status for d in declarations] + [i.status for i in font_items]
-    if any(s == Status.POTENTIAL_NON_COMPLIANCE for s in statuses):
+    if any(s in (Status.POTENTIAL_NON_COMPLIANCE, Status.NOT_DETECTED) for s in statuses):
         return Status.POTENTIAL_NON_COMPLIANCE
-    if any(s in (Status.NOT_DETECTED, Status.NOT_ASSESSABLE) for s in statuses):
-        return Status.POTENTIAL_NON_COMPLIANCE
+    if any(s == Status.NOT_ASSESSABLE for s in statuses):
+        return Status.NEEDS_OFFICER_REVIEW
     return Status.COMPLIANT
 
 
@@ -263,6 +263,7 @@ def run_scan(
     catalog: Optional[RuleCatalog] = None,
     extract_backend: str = "regex",
     label_text_provided: bool = False,
+    common_name: Optional[str] = None,
 ) -> Report:
     """Run the full pipeline over one or more images (e.g. front + back).
 
@@ -296,7 +297,7 @@ def run_scan(
     # 2. Extraction over ALL images (vision) or combined OCR text (regex).
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
     outcome = extract_declarations(combined_text, catalog, backend=extract_backend,
-                                   images=list(images))
+                                   images=list(images), common_name_hint=common_name)
     fields = outcome.fields
     unreadable = not outcome.used_llm and not (outcome.text_read or "").strip()
     if outcome.used_llm:

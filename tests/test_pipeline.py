@@ -6,9 +6,18 @@ import numpy as np
 import pytest
 
 from backend.pipeline import run_scan
-from backend.vision.ocr import OcrResult, Token, tesseract_available, tesseract_ocr
+from backend.vision.ocr import OcrResult, Token, ocr_from_text, tesseract_available, tesseract_ocr
 from backend.schemas.report import CalibrationVerdict, Status
 from backend.reports.render import render_html, render_json
+
+_FULL_LABEL = """
+Tomato Ketchup
+Manufactured by: FoodCo Pvt Ltd, Plot 12, Pune, Maharashtra 411001
+Net Qty 200 g
+MRP Rs. 45.00 (incl. of all taxes)
+Mfg Aug 2026
+Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567
+"""
 
 
 def test_full_scan_calibrated(scene_factory):
@@ -172,6 +181,37 @@ def test_llm_failure_falls_back_to_ocr(monkeypatch):
     assert mrp.status == Status.COMPLIANT
     net_qty = next(d for d in report.declarations if d.id == "net_quantity")
     assert net_qty.status == Status.COMPLIANT
+
+
+def test_fully_compliant_with_common_name_supplied(scene_factory):
+    """A perfect label + officer-supplied generic name -> compliant disposition.
+
+    Uses `ocr_from_text` (line tokens, no pixel bbox) so no Rule 7 font items
+    are produced -- this test is about the Rule 6 declaration rollup only.
+    """
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    report = run_scan(img, ocr_from_text(_FULL_LABEL), marker_mm=40.0,
+                      common_name="tomato ketchup", extract_backend="regex")
+
+    common_name = next(d for d in report.declarations if d.id == "common_name")
+    assert common_name.status == Status.COMPLIANT
+    assert report.disposition == Status.COMPLIANT
+
+
+def test_needs_officer_review_when_only_gaps_are_not_assessable(scene_factory):
+    """The same perfect label, but with no common_name hint: the regex backend
+    can't confirm the generic name, so that one item is not_assessable -- and
+    the overall disposition is needs_officer_review, not potential_non_compliance."""
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    report = run_scan(img, ocr_from_text(_FULL_LABEL), marker_mm=40.0,
+                      extract_backend="regex")
+
+    common_name = next(d for d in report.declarations if d.id == "common_name")
+    assert common_name.status == Status.NOT_ASSESSABLE
+    assert common_name.note == "generic name needs officer confirmation"
+    others = [d for d in report.declarations if d.id != "common_name"]
+    assert all(d.status in (Status.COMPLIANT, Status.NOT_APPLICABLE) for d in others)
+    assert report.disposition == Status.NEEDS_OFFICER_REVIEW
 
 
 def test_no_readable_text_needs_officer_review():

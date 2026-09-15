@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog
-from .fields import FieldExtraction, extract_fields
+from .fields import FieldExtraction, extract_fields, normalize_ws
 
 
 @dataclass
@@ -28,23 +28,49 @@ class ExtractionOutcome:
     text_read: str = ""
 
 
+def _reconcile_common_name(fields, text: str, hint: Optional[str]) -> None:
+    """The LLM never decides compliance: its common_name value is only trusted
+    if it also appears in the OCR/label text, or the officer supplied it
+    directly. Otherwise it needs officer confirmation, same as the regex path.
+    """
+    for f in fields:
+        if f.id != "common_name":
+            continue
+        if hint:
+            found = normalize_ws(hint).lower() in normalize_ws(text).lower()
+            f.present, f.value = found, (hint if found else None)
+            f.needs_confirmation = False
+            continue
+        if f.present and f.value and normalize_ws(f.value).lower() in normalize_ws(text).lower():
+            continue  # LLM value corroborated by the OCR/label text
+        f.present = False
+        f.value = None
+        f.needs_confirmation = True
+        f.confirmation_reason = "generic name needs officer confirmation"
+
+
 def extract_declarations(
     text: str,
     catalog: RuleCatalog,
     backend: str = "regex",
     images=None,
+    common_name_hint: Optional[str] = None,
 ) -> ExtractionOutcome:
     """Extract declarations using the requested backend.
 
     backend: "regex" (offline default), "llm" (require Claude), or "auto"
     (Claude if available, else OCR + regex). `images` (a list of BGR ndarrays,
-    e.g. front + back) enables the Claude vision path.
+    e.g. front + back) enables the Claude vision path. `common_name_hint` is
+    the officer-supplied generic name (e.g. "tomato ketchup"), if given.
     """
     ids = [d.id for d in catalog.declarations]
     text = text or ""
 
     if backend == "regex":
-        return ExtractionOutcome(fields=extract_fields(text, ids), text_read=text)
+        return ExtractionOutcome(
+            fields=extract_fields(text, ids, common_name_hint=common_name_hint),
+            text_read=text,
+        )
 
     if backend in ("llm", "auto"):
         from .llm import (
@@ -58,6 +84,7 @@ def extract_declarations(
                     fields = extract_fields_from_images(images, catalog, ids)
                 else:
                     fields = extract_fields_llm(text, catalog, ids)
+                _reconcile_common_name(fields, text, common_name_hint)
                 return ExtractionOutcome(fields=fields, used_llm=True)
             except ExtractionError as exc:
                 if backend == "llm":
@@ -77,11 +104,14 @@ def extract_declarations(
                                 continue
                         fallback_text = "\n".join(p for p in parts if p)
                 return ExtractionOutcome(
-                    fields=extract_fields(fallback_text, ids),
+                    fields=extract_fields(fallback_text, ids, common_name_hint=common_name_hint),
                     used_llm=False,
                     llm_error=str(exc),
                     text_read=fallback_text,
                 )
-        return ExtractionOutcome(fields=extract_fields(text, ids), text_read=text)
+        return ExtractionOutcome(
+            fields=extract_fields(text, ids, common_name_hint=common_name_hint),
+            text_read=text,
+        )
 
     raise ExtractionError(f"unknown extraction backend {backend!r}")
