@@ -52,8 +52,22 @@ p { text-wrap: pretty; }
 .app { max-width: 880px; margin: 0 auto; padding: clamp(16px, 4vw, 32px) clamp(14px, 4vw, 20px) 72px; }
 
 /* ---- Masthead + ruler-strip signature ---- */
-.masthead { padding: 0 0 4px; margin-bottom: 22px; }
+.masthead {
+  padding: 0 0 4px; margin-bottom: 22px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
 .brand { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.session { display: flex; align-items: center; gap: 10px; }
+.session-who {
+  font-size: var(--t-label); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--sub);
+}
+.session .ghost {
+  font-family: var(--font); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+  font-size: var(--t-micro); border: var(--bd) solid var(--ink); background: var(--card); color: var(--ink);
+  padding: 6px 12px; cursor: pointer;
+}
+.session .ghost:hover { background: var(--g1); }
 .wordmark {
   font-family: var(--font);
   font-weight: 800;
@@ -295,7 +309,7 @@ button { font: inherit; }
   display: inline-block; margin-top: 26px; font-weight: 800; font-size: var(--t-body);
   text-transform: uppercase; letter-spacing: 0.03em; color: var(--card); background: var(--ink);
   border: var(--bd) solid var(--ink); box-shadow: var(--shadow-sm); padding: 12px 18px; text-decoration: none;
-  transition: transform .06s, box-shadow .06s; max-width: 100%;
+  transition: transform .06s, box-shadow .06s; max-width: 100%; cursor: pointer;
 }
 .dl:hover { transform: translate(2px, 2px); box-shadow: var(--shadow-press); }
 

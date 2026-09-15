@@ -138,3 +138,7 @@ def create_user(session: Session, *, email: str, name: str, role: str,
 
 def get_user_by_email(session: Session, email: str) -> Optional[User]:
     return session.scalar(select(User).where(User.email == email))
+
+
+def list_users(session: Session) -> List[User]:
+    return list(session.scalars(select(User).order_by(User.email)))

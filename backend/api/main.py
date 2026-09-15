@@ -1,19 +1,24 @@
 """Metros HTTP API (FastAPI).
 
 Endpoints:
-  POST /auth/token           login -> JWT
-  POST /scan                 upload image (+ optional label text / metadata) -> Report
-  GET  /scans                search the repository
-  GET  /scans/{id}           fetch a stored report
-  GET  /scans/{id}/report.docx   download editable report
-  POST /scans/{id}/actions   officer verification / override (audited)
+  POST /auth/token                login -> JWT
+  POST /users                     create a user (admin)
+  GET  /users                     list users (admin)
+  POST /scan                      upload image (+ optional label text / metadata) -> Report
+  GET  /scans                     search the repository
+  GET  /scans/{id}                fetch a stored report
+  GET  /scans/{id}/report.pdf     download the PDF report
+  POST /scans/{id}/finalize       officer verification (audited)
   GET  /health
 
-Offline-first: if PaddleOCR is not installed, callers pass `label_text` and the
-scan still runs. Millimetre verdicts require a calibration marker in the image.
+Auth is on by default (Bearer JWT from /auth/token); METROS_AUTH_DISABLED=1
+bypasses it for local development only (refused at startup in production --
+see core.config.production_safety_check). Millimetre verdicts require a
+calibration marker in the image; without one, OCR/label text is still read.
 """
 from __future__ import annotations
 
+import logging
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,14 +30,15 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-import logging
-
-from ..core.config import get_settings, marker_size_mismatch_warning
+from ..core.config import get_settings, marker_size_mismatch_warning, production_safety_check
 from ..core.errors import MetrosError
 from ..db.repository import (
     append_audit,
+    create_user,
     get_report,
+    get_user_by_email,
     init_db,
+    list_users,
     make_engine,
     save_report,
     search_scans,
@@ -49,8 +55,12 @@ from ..vision.ocr import (
     tesseract_available,
     tesseract_ocr,
 )
+from .auth import CurrentUser, get_current_user, require_role
+from .security import ROLES, create_access_token, hash_password, verify_password
 
 app = FastAPI(title="Metros API", version="0.1.0")
+
+production_safety_check()
 
 _marker_warning = marker_size_mismatch_warning()
 if _marker_warning:
@@ -70,6 +80,53 @@ def get_session():
 def health():
     from ..extract.llm import llm_available
     return {"status": "ok", "version": app.version, "llm_available": llm_available()}
+
+
+class TokenRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    name: str
+
+
+@app.post("/auth/token", response_model=TokenResponse)
+def login(body: TokenRequest, session=Depends(get_session)):
+    user = get_user_by_email(session, body.email)
+    if user is None or not verify_password(body.password, user.pw_hash):
+        raise HTTPException(status_code=401, detail="invalid email or password")
+    token = create_access_token(sub=user.id, role=user.role, name=user.name)
+    return TokenResponse(access_token=token, role=user.role, name=user.name)
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+    role: str = "officer"
+
+
+@app.post("/users")
+def create_user_route(body: CreateUserRequest, session=Depends(get_session),
+                      _admin: CurrentUser = Depends(require_role("admin"))):
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail=f"role must be one of {ROLES}")
+    if get_user_by_email(session, body.email) is not None:
+        raise HTTPException(status_code=409, detail="a user with that email already exists")
+    user = create_user(session, email=body.email, name=body.name or body.email,
+                       role=body.role, pw_hash=hash_password(body.password))
+    return {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
+
+
+@app.get("/users")
+def list_users_route(session=Depends(get_session),
+                     _admin: CurrentUser = Depends(require_role("admin"))):
+    return [{"id": u.id, "email": u.email, "name": u.name, "role": u.role}
+            for u in list_users(session)]
 
 
 def _decode_image(data: bytes) -> np.ndarray:
@@ -112,9 +169,8 @@ async def scan(
     panel_area_cm2_other: Optional[float] = Form(None),
     llm: bool = Form(True),
     session=Depends(get_session),
+    current_user: CurrentUser = Depends(require_role("officer", "admin")),
 ):
-    # Prototype: no auth. Actions are attributed to a default field officer.
-    user = {"sub": "prototype-officer", "role": "officer"}
     if len(images) < 2:
         raise HTTPException(
             status_code=400,
@@ -140,8 +196,9 @@ async def scan(
                 for i, img in enumerate(decoded)]
 
     product = Product(name=product_name, brand=brand, category=category, source=source)
-    inspection = Inspection(officer=Officer(id=user["sub"], name=user["sub"],
-                                            role=user["role"]))
+    inspection = Inspection(officer=Officer(id=current_user.sub,
+                                            name=current_user.name or current_user.sub,
+                                            role=current_user.role))
     try:
         report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                           product=product, inspection=inspection,
@@ -157,15 +214,16 @@ async def scan(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    save_report(session, report, created_by=user["sub"])
-    append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)
+    save_report(session, report, created_by=current_user.sub)
+    append_audit(session, action="scan", user_id=current_user.sub, target=report.report_id)
     return JSONResponse(content=report.model_dump(by_alias=True, mode="json"))
 
 
 @app.get("/scans")
 def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = None,
                limit: int = 50, offset: int = 0,
-               session=Depends(get_session)):
+               session=Depends(get_session),
+               _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
     rows = search_scans(session, disposition=disposition, product_name=product_name,
                         limit=limit, offset=offset)
     return [
@@ -176,7 +234,8 @@ def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = 
 
 
 @app.get("/scans/{scan_id}")
-def fetch_scan(scan_id: str, session=Depends(get_session)):
+def fetch_scan(scan_id: str, session=Depends(get_session),
+               _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
@@ -184,7 +243,8 @@ def fetch_scan(scan_id: str, session=Depends(get_session)):
 
 
 @app.get("/scans/{scan_id}/report.pdf")
-def download_pdf(scan_id: str, session=Depends(get_session)):
+def download_pdf(scan_id: str, session=Depends(get_session),
+                 _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
@@ -209,19 +269,22 @@ class FinalizeBody(BaseModel):
 
 
 @app.post("/scans/{scan_id}/finalize")
-def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session)):
+def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session),
+            current_user: CurrentUser = Depends(require_role("officer", "admin"))):
     """Record the officer's decision on each flagged item and finalize the report.
 
-    Each decision is appended (append-only) to the report's officer_actions and
-    the audit log; the finalized report re-renders into the PDF with real
-    officer findings.
+    Officer identity comes from the JWT, never a free-text field; `officer_name`
+    is kept only as an optional display override. Each decision is appended
+    (append-only) to the report's officer_actions and the audit log; the
+    finalized report re-renders into the PDF with real officer findings.
     """
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
 
     now = datetime.now(timezone.utc)
-    officer = body.officer_name.strip() or "field officer"
+    officer_id = current_user.sub
+    officer = body.officer_name.strip() or current_user.name or current_user.sub
     for a in body.actions:
         if a.verdict == "confirmed_issue" and not a.note.strip():
             raise HTTPException(
@@ -232,10 +295,10 @@ def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session)):
             declaration_id=a.declaration_id,
             action=a.verdict,
             reason=a.note.strip() or None,
-            officer_id=officer,
+            officer_id=officer_id,
             at=now,
         ))
-        append_audit(session, action=f"officer_{a.verdict}", user_id=officer,
+        append_audit(session, action=f"officer_{a.verdict}", user_id=officer_id,
                      target=f"{scan_id}/{a.declaration_id}", reason=a.note.strip())
 
     # Record who finalized + when in the inspection block.

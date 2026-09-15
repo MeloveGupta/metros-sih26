@@ -1,4 +1,6 @@
-"""API tests (prototype: no auth) with FastAPI TestClient over a temp SQLite DB."""
+"""API tests (auth disabled: these exercise scan/search behaviour, not auth
+itself -- see test_auth.py for the real auth flow) with FastAPI TestClient
+over a temp SQLite DB."""
 from __future__ import annotations
 
 import os
@@ -11,6 +13,7 @@ import pytest
 # Point the app at an isolated DB BEFORE importing it.
 _DB = os.path.join(tempfile.mkdtemp(), "api_test.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
+os.environ["METROS_AUTH_DISABLED"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

@@ -63,6 +63,13 @@ class Settings:
     jwt_expire_minutes: int = field(
         default_factory=lambda: int(_env("JWT_EXPIRE_MINUTES", "480"))
     )
+    # Bypasses auth entirely for local development ONLY -- refused in production.
+    auth_disabled: bool = field(
+        default_factory=lambda: _env("METROS_AUTH_DISABLED", "") == "1"
+    )
+    # "development" (default) | "production". Gates auth_disabled and the
+    # default JWT secret so neither can silently ship to a real deployment.
+    env: str = field(default_factory=lambda: _env("METROS_ENV", "development"))
 
     # Database / storage (used by db + api layers)
     database_url: str = field(
@@ -75,6 +82,24 @@ class Settings:
 def get_settings() -> Settings:
     """Return a fresh settings snapshot from the current environment."""
     return Settings()
+
+
+def production_safety_check(settings: Settings | None = None) -> None:
+    """Refuse to start in production with an auth bypass or the default,
+    publicly-known JWT secret -- both are fine for local development, never
+    for a real deployment."""
+    settings = settings or get_settings()
+    if settings.env != "production":
+        return
+    if settings.auth_disabled:
+        raise RuntimeError(
+            "METROS_AUTH_DISABLED=1 is not allowed when METROS_ENV=production."
+        )
+    if settings.jwt_secret == "dev-insecure-secret":
+        raise RuntimeError(
+            "JWT_SECRET must be set to a real secret when METROS_ENV=production "
+            "(the default is publicly known)."
+        )
 
 
 def marker_size_mismatch_warning(settings: Settings | None = None) -> str | None:

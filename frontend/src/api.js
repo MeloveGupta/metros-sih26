@@ -1,4 +1,44 @@
-// Thin API client for the Metros backend. Prototype: no auth.
+// Thin API client for the Metros backend.
+//
+// The JWT is kept in memory only (never localStorage/sessionStorage) -- a
+// page reload requires signing in again, which is the point.
+
+let _token = null;
+
+export function setAuthToken(token) {
+  _token = token;
+}
+
+export function getAuthToken() {
+  return _token;
+}
+
+function _authHeaders() {
+  return _token ? { Authorization: `Bearer ${_token}` } : {};
+}
+
+async function _asJson(res, failMessage) {
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `${failMessage} (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function login(email, password) {
+  const res = await fetch("/auth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await _asJson(res, "Sign in failed");
+  setAuthToken(body.access_token);
+  return body; // { access_token, role, name }
+}
+
+export function logout() {
+  setAuthToken(null);
+}
 
 export async function scan({ files, productName, commonName, category, panel }) {
   const form = new FormData();
@@ -14,33 +54,37 @@ export async function scan({ files, productName, commonName, category, panel }) 
     if (panel.areaCm2Other) form.append("panel_area_cm2_other", panel.areaCm2Other);
   }
 
-  const res = await fetch("/scan", { method: "POST", body: form });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Scan failed (${res.status})`);
-  }
-  return res.json();
+  const res = await fetch("/scan", { method: "POST", body: form, headers: _authHeaders() });
+  return _asJson(res, "Scan failed");
 }
 
 export async function listScans() {
-  const res = await fetch("/scans");
-  if (!res.ok) throw new Error("Could not load scans");
-  return res.json();
+  const res = await fetch("/scans", { headers: _authHeaders() });
+  return _asJson(res, "Could not load scans");
 }
 
-export function pdfUrl(reportId) {
-  return `/scans/${reportId}/report.pdf`;
+export async function downloadPdf(reportId) {
+  const res = await fetch(`/scans/${reportId}/report.pdf`, { headers: _authHeaders() });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `metros-${reportId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function finalize(reportId, { officerName, actions }) {
   const res = await fetch(`/scans/${reportId}/finalize`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ..._authHeaders() },
     body: JSON.stringify({ officer_name: officerName, actions }),
   });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Finalize failed (${res.status})`);
-  }
-  return res.json();
+  return _asJson(res, "Finalize failed");
 }

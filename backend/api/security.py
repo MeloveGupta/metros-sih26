@@ -35,7 +35,7 @@ def verify_password(password: str, pw_hash: str) -> bool:
         return False
 
 
-def create_access_token(sub: str, role: str,
+def create_access_token(sub: str, role: str, name: str = "",
                         expires_minutes: Optional[int] = None) -> str:
     settings = get_settings()
     minutes = expires_minutes or settings.jwt_expire_minutes
@@ -43,6 +43,7 @@ def create_access_token(sub: str, role: str,
     payload = {
         "sub": sub,
         "role": role,
+        "name": name,
         "iat": now,
         "exp": now + timedelta(minutes=minutes),
     }

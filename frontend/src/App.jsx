@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { scan } from "./api.js";
+import { logout, scan } from "./api.js";
+import Login from "./Login.jsx";
 import ReportView from "./ReportView.jsx";
 
 function PanelDimensions({ shape, setShape, dims, setDims }) {
@@ -163,7 +164,14 @@ function ScanForm({ onReport }) {
 }
 
 export default function App() {
+  const [session, setSession] = useState(null); // { name, role }
   const [report, setReport] = useState(null);
+
+  function signOut() {
+    logout();
+    setSession(null);
+    setReport(null);
+  }
 
   return (
     <div className="app">
@@ -171,11 +179,23 @@ export default function App() {
         <div className="brand">
           <span className="wordmark">METROS</span>
         </div>
+        {session && (
+          <div className="session">
+            <span className="session-who">{session.name || session.role}</span>
+            <button type="button" className="ghost" onClick={signOut}>Log out</button>
+          </div>
+        )}
       </header>
 
       <main>
-        <ScanForm onReport={setReport} />
-        {report && <ReportView report={report} onUpdate={setReport} />}
+        {!session ? (
+          <Login onSignedIn={setSession} />
+        ) : (
+          <>
+            <ScanForm onReport={setReport} />
+            {report && <ReportView report={report} onUpdate={setReport} />}
+          </>
+        )}
       </main>
     </div>
   );

@@ -12,6 +12,7 @@ export default defineConfig({
       "/auth": "http://localhost:8000",
       "/scan": "http://localhost:8000",
       "/scans": "http://localhost:8000",
+      "/users": "http://localhost:8000",
       "/health": "http://localhost:8000",
     },
   },
