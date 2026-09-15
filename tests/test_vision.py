@@ -8,9 +8,12 @@ import pytest
 from backend.vision.scale import MIN_CORNER_JITTER_PX, detect_scale, px_to_mm
 from backend.vision.measure import (
     glyph_height_mm,
+    glyph_height_mm_boxes,
     glyph_width_ratio,
+    glyph_width_ratio_boxes,
     panel_area_cm2,
 )
+from backend.vision.glyphs import extract_glyph_boxes
 
 
 def test_detect_scale_frontal_recovers_mm_per_pixel(scene_factory):
@@ -125,3 +128,77 @@ def test_corner_jitter_floor_and_blur_increase_instability(scene_factory):
         assert blurred_res.corner_jitter_px >= clean_res.corner_jitter_px
     else:
         assert blurred_res.reason
+
+
+# --- 2.8: character-level glyph boxes for width ratio and height ---
+
+def _synthetic_glyph_row(image, x0, y0, glyph_w, glyph_h, count=3, gap=14):
+    """Draw `count` solid black rectangles side by side (standing in for
+    glyphs of an exact known width x height) and return the enclosing bbox."""
+    for i in range(count):
+        x = x0 + i * (glyph_w + gap)
+        cv2.rectangle(image, (x, y0), (x + glyph_w, y0 + glyph_h), (0, 0, 0), -1)
+    total_w = count * glyph_w + (count - 1) * gap
+    return (x0, y0, total_w, glyph_h)
+
+
+def test_condensed_glyphs_flagged_by_per_glyph_width_ratio(scene_factory):
+    """A WORD bbox is always wider than 1/3 its height, so the old
+    whole-token measurement could never fail the width-ratio check. Individual
+    glyph boxes (each narrower than the token) can."""
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    # Condensed: each glyph is only 20% as wide as it is tall (< 1/3). Placed
+    # below the calibration card's own footprint (see backend.vision.card) so
+    # the pixels are actually drawn within the (larger) canvas.
+    bbox = _synthetic_glyph_row(img, 600, 780, glyph_w=18, glyph_h=90, count=3)
+    res = detect_scale(img, marker_mm=40.0)
+    assert res.calibrated
+
+    glyph_boxes = extract_glyph_boxes(img, bbox, "245")
+    assert len(glyph_boxes) == 3
+    result = glyph_width_ratio_boxes(res.H_img_to_mm, glyph_boxes, exempt_chars={"1", "i", "I", "l"})
+    assert result is not None
+    ratio, _char = result
+    assert ratio < 1 / 3
+
+    # The whole-token bbox measurement would NOT have caught this (3 glyphs +
+    # 2 gaps make the token far wider than 1/3 its height).
+    assert glyph_width_ratio(res.H_img_to_mm, bbox) > 1 / 3
+
+
+def test_normal_glyphs_pass_per_glyph_width_ratio(scene_factory):
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    # Normal: each glyph is 45% as wide as it is tall (> 1/3).
+    bbox = _synthetic_glyph_row(img, 600, 780, glyph_w=40, glyph_h=90, count=3)
+    res = detect_scale(img, marker_mm=40.0)
+    assert res.calibrated
+
+    glyph_boxes = extract_glyph_boxes(img, bbox, "245")
+    result = glyph_width_ratio_boxes(res.H_img_to_mm, glyph_boxes, exempt_chars={"1", "i", "I", "l"})
+    assert result is not None
+    ratio, _char = result
+    assert ratio >= 1 / 3
+
+
+def test_glyph_boxes_exempt_characters_are_skipped():
+    """A narrow '1' or 'I' must not fail the width-ratio check."""
+    # Build glyph boxes directly: a narrow "1" (exempt) and a normal "2".
+    glyph_boxes = [((0, 0, 10, 90), "1"), ((20, 0, 40, 90), "2")]
+    H = np.eye(3)  # identity homography: pixel coords == mm coords for this test
+    result = glyph_width_ratio_boxes(H, glyph_boxes, exempt_chars={"1", "i", "I", "l"})
+    assert result is not None
+    ratio, char = result
+    assert char == "2"  # the narrow "1" was skipped, not the smallest ratio
+
+
+def test_glyph_height_from_boxes_uses_median(scene_factory):
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    bbox = _synthetic_glyph_row(img, 600, 780, glyph_w=40, glyph_h=90, count=3)
+    res = detect_scale(img, marker_mm=40.0)
+    glyph_boxes = extract_glyph_boxes(img, bbox, "245")
+    m = glyph_height_mm_boxes(res.H_img_to_mm, glyph_boxes, res.marker_mm,
+                              meta["side_px"], res.corner_jitter_px)
+    assert m is not None
+    # 90px tall at 0.1mm/px => 9.0mm, same as the whole-token measurement here
+    # since all three synthetic glyphs are the same height.
+    assert m.value == pytest.approx(9.0, rel=0.05)

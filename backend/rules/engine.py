@@ -56,6 +56,7 @@ class GlyphInput:
     declaration_id: str
     height: Optional[MmMeasurement] = None
     width_ratio: Optional[float] = None
+    width_ratio_char: Optional[str] = None
     molded: bool = False
 
 
@@ -101,6 +102,7 @@ def _font_status(
     min_width_ratio: float,
     calibrated: bool,
     max_extrapolation_sides: float = 4.0,
+    width_ratio_char: Optional[str] = None,
 ) -> Tuple[Status, Optional[str]]:
     if not calibrated or height is None:
         return Status.NOT_ASSESSABLE, "no valid calibration; millimetre height not measurable"
@@ -127,14 +129,16 @@ def _font_status(
             f"{threshold_mm:.1f}mm minimum; physical verification needed",
         )
 
-    return _apply_width_ratio(status, reason, width_ratio, min_width_ratio)
+    return _apply_width_ratio(status, reason, width_ratio, min_width_ratio, width_ratio_char)
 
 
 def _apply_width_ratio(
     status: Status, reason: Optional[str], width_ratio: Optional[float], min_width_ratio: float,
+    width_ratio_char: Optional[str] = None,
 ) -> Tuple[Status, Optional[str]]:
     if width_ratio is not None and width_ratio < min_width_ratio:
-        extra = f"width/height ratio {width_ratio:.2f} < {min_width_ratio:.2f} (Rule 7(3))"
+        who = f" for '{width_ratio_char}'" if width_ratio_char else ""
+        extra = f"width/height ratio {width_ratio:.2f} < {min_width_ratio:.2f}{who} (Rule 7(3))"
         reason = f"{reason}; {extra}" if reason else extra
         if status == Status.COMPLIANT:
             status = Status.POTENTIAL_NON_COMPLIANCE
@@ -227,7 +231,7 @@ def evaluate(
             threshold = band.min_height_mm_molded if g.molded else band.min_height_mm
             status, reason = _font_status(
                 g.height, threshold, g.width_ratio, min_width_ratio, calibrated,
-                max_extrapolation_sides,
+                max_extrapolation_sides, g.width_ratio_char,
             )
         else:
             # No panel area known: we can only rule OUT compliance against
@@ -251,7 +255,8 @@ def evaluate(
             else:
                 status = Status.NOT_ASSESSABLE
                 reason = "panel area needed to select the Table-I band"
-            status, reason = _apply_width_ratio(status, reason, g.width_ratio, min_width_ratio)
+            status, reason = _apply_width_ratio(status, reason, g.width_ratio, min_width_ratio,
+                                               g.width_ratio_char)
         fa.items.append(
             FontItem(
                 declaration_id=g.declaration_id,
@@ -261,6 +266,7 @@ def evaluate(
                     else None
                 ),
                 width_ratio=g.width_ratio,
+                width_ratio_char=g.width_ratio_char,
                 threshold_mm=threshold if calibrated else None,
                 molded=g.molded,
                 status=status,

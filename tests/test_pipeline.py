@@ -272,6 +272,33 @@ def test_placement_grouping_always_routed_to_officer_review(scene_factory):
     assert "Rule 2(h)" in grouping.clause_ref.clause
 
 
+# --- 2.8: character-level glyph boxes (end to end through run_scan) ---
+
+def test_condensed_font_flagged_end_to_end(scene_factory):
+    """A word bbox is always wider than 1/3 its height, so the OLD whole-token
+    measurement could never catch a condensed font. Per-glyph measurement can."""
+    img, _ = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    # Three condensed "glyphs" (18px wide, 90px tall => ratio 0.2 < 1/3), well
+    # below the calibration card's own footprint (needs the larger canvas
+    # from pad=250 so the pixels are actually drawn within bounds).
+    glyph_w, glyph_h, gap, count = 18, 90, 14, 3
+    x0, y0 = 600, 780
+    for i in range(count):
+        x = x0 + i * (glyph_w + gap)
+        cv2.rectangle(img, (x, y0), (x + glyph_w, y0 + glyph_h), (0, 0, 0), -1)
+    total_w = count * glyph_w + (count - 1) * gap
+    bbox = (x0, y0, total_w, glyph_h)
+
+    text = "245"
+    tok = Token(text=text, bbox=bbox, confidence=0.9)
+    report = run_scan(img, OcrResult(text=text, tokens=[tok]), marker_mm=40.0, panel_area_cm2=150)
+
+    assert report.font_analysis.items, "font measured"
+    item = report.font_analysis.items[0]
+    assert item.status == Status.POTENTIAL_NON_COMPLIANCE
+    assert "Rule 7(3)" in item.reason
+
+
 # --- 2.5: category-based applicability & exemptions ---
 
 def test_category_food_exempts_manufacturer_and_mfg_date(scene_factory):

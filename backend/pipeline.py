@@ -38,12 +38,20 @@ from .schemas.report import (
 from .vision.measure import (
     MmMeasurement,
     glyph_height_mm,
+    glyph_height_mm_boxes,
     glyph_width_ratio,
+    glyph_width_ratio_boxes,
     panel_area_cm2,
 )
 from .vision.card import card_outline_mm
+from .vision.glyphs import extract_glyph_boxes
 from .vision.ocr import OcrResult, Token
 from .vision.scale import CalibrationResult, detect_scale
+
+# Only digits and uppercase letters have a reliable, unambiguous cap height
+# for glyph-box measurement; lowercase x-height/ascenders/descenders are not
+# used (see LIMITATIONS_TEXT).
+_MEASURABLE_CHARS = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 APP_VERSION = "0.1.0"
 
@@ -160,7 +168,8 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
                       fields: Optional[List[FieldExtraction]] = None,
                       panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None,
                       category: Optional[str] = None,
-                      catalog: Optional[RuleCatalog] = None) -> FontInputs:
+                      catalog: Optional[RuleCatalog] = None,
+                      image: Optional[np.ndarray] = None) -> FontInputs:
     """Measure letter height directly from OCR text tokens (Rule 7).
 
     Rule 7 is about the MINIMUM letter height on the PRODUCT panel, so tokens
@@ -201,6 +210,9 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
         if f.bbox is not None:
             decl_bbox_ids[tuple(f.bbox)] = f.id
 
+    exempt_chars = set(catalog.font_absolute.get("width_ratio_exceptions", ["1", "i", "I", "l"])) \
+        if catalog is not None else {"1", "i", "I", "l"}
+
     measured = []
     for t in tokens:
         if not t.bbox:
@@ -224,14 +236,13 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
         if len(alnum) / max(len(txt), 1) < 0.6:  # mostly symbols => garbage
             continue
         try:
-            hmm = glyph_height_mm(cal.H_img_to_mm, t.bbox, cal.marker_mm,
-                                  mean_side, cal.corner_jitter_px)
-            ratio = glyph_width_ratio(cal.H_img_to_mm, t.bbox)
+            hmm, ratio, ratio_char = _measure_token(cal, t.bbox, txt, image, mean_side,
+                                                    exempt_chars)
         except Exception:
             continue
         has_digit = bool(re.search(r"\d", txt))
         decl_id = decl_bbox_ids.get(tuple(t.bbox))
-        measured.append((hmm, ratio, txt, has_digit, decl_id))
+        measured.append((hmm, ratio, txt, has_digit, decl_id, ratio_char))
     if not measured:
         return FontInputs(panel_area_cm2=area)
     # Prefer tokens already matched to an extracted declaration (definitely
@@ -242,10 +253,36 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     ranked.sort(key=lambda m: m[0].value)
     items = [
         GlyphInput(decl_id if decl_id is not None else f'"{txt[:18]}"',
-                  height=hmm, width_ratio=ratio, molded=molded)
-        for hmm, ratio, txt, _, decl_id in ranked[:3]
+                  height=hmm, width_ratio=ratio, width_ratio_char=ratio_char, molded=molded)
+        for hmm, ratio, txt, _, decl_id, ratio_char in ranked[:3]
     ]
     return FontInputs(panel_area_cm2=area, items=items)
+
+
+def _measure_token(cal: CalibrationResult, bbox, text: str, image: Optional[np.ndarray],
+                   mean_side_px: float, exempt_chars: set):
+    """Measure one token's height and width ratio, preferring individual
+    character-glyph boxes (Rule 7(3) needs per-glyph width, and height should
+    come from digit/uppercase glyphs, not a whole multi-character word box).
+    Falls back to the whole-token bbox when no image is available or no
+    glyph box survives extraction (e.g. a very small/blurry crop)."""
+    glyph_boxes = extract_glyph_boxes(image, bbox, text) if image is not None else []
+    hmm = None
+    ratio_result = None
+    if glyph_boxes:
+        hmm = glyph_height_mm_boxes(cal.H_img_to_mm, glyph_boxes, cal.marker_mm,
+                                    mean_side_px, cal.corner_jitter_px,
+                                    measurable_chars=_MEASURABLE_CHARS)
+        ratio_result = glyph_width_ratio_boxes(cal.H_img_to_mm, glyph_boxes,
+                                               exempt_chars=exempt_chars)
+    if hmm is None:
+        hmm = glyph_height_mm(cal.H_img_to_mm, bbox, cal.marker_mm, mean_side_px,
+                              cal.corner_jitter_px)
+    if ratio_result is None:
+        ratio, ratio_char = glyph_width_ratio(cal.H_img_to_mm, bbox), None
+    else:
+        ratio, ratio_char = ratio_result
+    return hmm, ratio, ratio_char
 
 
 def _rects_intersect(a, b) -> bool:
@@ -437,7 +474,7 @@ def run_scan(
         font_inputs = _font_from_tokens(cal, marker_tokens, molded,
                                         panel_area_cm2_known=panel_area_cm2,
                                         fields=fields, panel_polygon_px=panel_polygon_px,
-                                        category=category, catalog=catalog)
+                                        category=category, catalog=catalog, image=marker_image)
     else:
         font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
                                          panel_area_cm2_known=panel_area_cm2)

@@ -91,6 +91,7 @@ class FontItem(BaseModel):
     declaration_id: str
     height_mm: Optional[Measurement] = None
     width_ratio: Optional[float] = None
+    width_ratio_char: Optional[str] = None
     threshold_mm: Optional[float] = None
     molded: bool = False
     status: Status
@@ -216,7 +217,11 @@ LIMITATIONS_TEXT = (
     "transparent or steeply angled packages. It also assumes the measured text "
     "lies in the same plane as the calibration card; text noticeably closer to "
     "or further from the camera than the card (out-of-plane offset) is not "
-    "detected by a single marker and can bias the result. Authorised physical "
+    "detected by a single marker and can bias the result. Letter height and "
+    "width-ratio measurement uses individual glyph boxes only for digits and "
+    "uppercase letters, which have an unambiguous cap height; lowercase "
+    "x-height (ascenders/descenders) is not used, so a lowercase-only "
+    "declaration falls back to a whole-word measurement. Authorised physical "
     "measurement remains necessary for any enforcement action."
 )
 

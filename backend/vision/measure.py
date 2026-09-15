@@ -8,7 +8,7 @@ the rule engine, which flags POTENTIAL non-compliance for officer verification.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -97,6 +97,75 @@ def glyph_width_ratio(
     if height_mm <= 0:
         raise MeasurementError("degenerate glyph height")
     return round(width_mm / height_mm, 4)
+
+
+GlyphBox = Tuple[Tuple[float, float, float, float], Optional[str]]  # (bbox, char-or-None)
+
+
+def glyph_height_mm_boxes(
+    H_img_to_mm: np.ndarray,
+    glyph_boxes: List[GlyphBox],
+    marker_mm: float,
+    mean_side_px: float,
+    corner_jitter_px: float,
+    measurable_chars: Optional[set] = None,
+) -> Optional[MmMeasurement]:
+    """Median height (mm) of individual glyph boxes, each measured through the
+    homography. Only digits/uppercase letters have a reliable, unambiguous cap
+    height; a box paired with a known lowercase character is excluded (a box
+    with an unknown/unpaired character is kept -- best effort, not a guess)."""
+    candidates = [
+        bbox for bbox, ch in glyph_boxes
+        if ch is None or measurable_chars is None or ch in measurable_chars
+    ]
+    heights = []
+    for bbox in candidates:
+        x, y, w, h = bbox
+        if w <= 0 or h <= 0:
+            continue
+        p = px_to_mm(H_img_to_mm, np.array([[x + w / 2.0, y], [x + w / 2.0, y + h]]))
+        heights.append((float(np.linalg.norm(p[0] - p[1])), bbox))
+    if not heights:
+        return None
+    heights.sort(key=lambda t: t[0])
+    med_h, med_bbox = heights[len(heights) // 2]
+    x, y, w, h = med_bbox
+    center_px = (x + w / 2.0, y + h / 2.0)
+    d = extrapolation_distance(H_img_to_mm, marker_mm, center_px)
+    rel = _relative_uncertainty(marker_mm, mean_side_px, corner_jitter_px, span_px=h,
+                                extrapolation_d=d)
+    return MmMeasurement(round(med_h, 3), round(med_h * rel, 3), extrapolation_d=round(d, 3))
+
+
+def glyph_width_ratio_boxes(
+    H_img_to_mm: np.ndarray,
+    glyph_boxes: List[GlyphBox],
+    exempt_chars: Optional[set] = None,
+) -> Optional[Tuple[float, Optional[str]]]:
+    """Smallest width/height ratio among glyph boxes (Rule 7(3): >= 1/3),
+    skipping any box paired with a known-exempt character ("1", "i", "I",
+    "l"). Returns (ratio, source-char-or-None) for the narrowest glyph, or
+    None if there was nothing measurable."""
+    exempt_chars = exempt_chars or set()
+    ratios = []
+    for bbox, ch in glyph_boxes:
+        if ch is not None and ch in exempt_chars:
+            continue
+        x, y, w, h = bbox
+        if w <= 0 or h <= 0:
+            continue
+        corners = px_to_mm(
+            H_img_to_mm,
+            np.array([[x + w / 2, y], [x + w / 2, y + h], [x, y + h / 2], [x + w, y + h / 2]]),
+        )
+        height_mm = float(np.linalg.norm(corners[0] - corners[1]))
+        width_mm = float(np.linalg.norm(corners[2] - corners[3]))
+        if height_mm <= 0:
+            continue
+        ratios.append((round(width_mm / height_mm, 4), ch))
+    if not ratios:
+        return None
+    return min(ratios, key=lambda t: t[0])
 
 
 def _polygon_area_mm2(points_mm: np.ndarray) -> float:
