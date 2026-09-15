@@ -13,7 +13,26 @@ from typing import List, Optional
 
 from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog
-from .fields import FieldExtraction, extract_fields, normalize_ws
+from .fields import (
+    FieldExtraction,
+    _ORIGIN_CUE,
+    extract_fields,
+    normalize_ws,
+    validate_consumer_care,
+    validate_manufacturer,
+    validate_mrp,
+    validate_net_quantity,
+)
+
+# The LLM only extracts; format compliance is always decided by the same
+# deterministic validators the regex backend uses, run against the LLM's own
+# extracted value text -- the LLM's own format_pass claim is never trusted.
+_DETERMINISTIC_VALIDATORS = {
+    "manufacturer": validate_manufacturer,
+    "mrp": validate_mrp,
+    "net_quantity": validate_net_quantity,
+    "consumer_care": validate_consumer_care,
+}
 
 
 @dataclass
@@ -47,6 +66,41 @@ def _reconcile_common_name(fields, text: str, hint: Optional[str]) -> None:
         f.value = None
         f.needs_confirmation = True
         f.confirmation_reason = "generic name needs officer confirmation"
+
+
+def _reconcile_country_of_origin(fields, text: str) -> None:
+    """Rule 6(1)(aa) applies only to imported products. Code decides
+    applicability and presence from the OCR/label text -- the LLM's own
+    assessment is never trusted, even though the prompt also tells it not to
+    infer/guess. When there's no independent text to check against (the
+    vision-only path with no OCR run), a value is only trusted if one was
+    actually given, never invented."""
+    for f in fields:
+        if f.id != "country_of_origin":
+            continue
+        if not text.strip():
+            if not f.value:
+                f.present, f.applicable = False, False
+            continue
+        m = _ORIGIN_CUE.search(text)
+        if not m:
+            f.present, f.applicable, f.value = False, False, None
+            continue
+        f.applicable = True
+        if f.value and normalize_ws(f.value).lower() in normalize_ws(text).lower():
+            f.present = True
+        else:
+            f.present, f.value = False, None
+
+
+def _apply_deterministic_validators(fields) -> None:
+    for f in fields:
+        validator = _DETERMINISTIC_VALIDATORS.get(f.id)
+        if validator is None or not f.present or not f.value:
+            continue
+        ok, detail = validator(f.value)
+        f.format_pass = ok
+        f.format_detail = None if ok else detail
 
 
 def extract_declarations(
@@ -85,6 +139,8 @@ def extract_declarations(
                 else:
                     fields = extract_fields_llm(text, catalog, ids)
                 _reconcile_common_name(fields, text, common_name_hint)
+                _reconcile_country_of_origin(fields, text)
+                _apply_deterministic_validators(fields)
                 return ExtractionOutcome(fields=fields, used_llm=True)
             except ExtractionError as exc:
                 if backend == "llm":
