@@ -32,8 +32,8 @@ def sample_report() -> Report:
         ref_no="MS-2026-0001",
         generated_at=datetime(2026, 9, 3, 20, 15, tzinfo=timezone.utc),
         rule_catalog=RuleCatalogInfo(version="2011 (amended 2022)", hash="sha256:abc"),
-        evidence=Evidence(original=OriginalImage(
-            file="chips.jpg", sha256="deadbeef", width=1200, height=1600)),
+        evidence=Evidence(images=[OriginalImage(
+            file="chips.jpg", sha256="deadbeef", width=1200, height=1600)]),
         calibration=Calibration(
             aruco_dict="DICT_4X4_50", marker_id=0, marker_mm=40.0,
             mm_per_pixel=0.1, corner_jitter_px=0.8, detection_confidence=0.95,

@@ -8,6 +8,8 @@ Endpoints:
   GET  /scans                     search the repository (paged)
   GET  /stats                     dashboard KPIs
   GET  /scans/{id}                fetch a stored report
+  GET  /scans/{id}/images/{n}     download the n-th uploaded evidence image
+  GET  /scans/{id}/crops/{name}   download a declaration's evidence crop
   GET  /scans/{id}/report.pdf     download the PDF report
   GET  /scans/{id}/report.docx    download the editable DOCX report
   POST /scans/{id}/finalize       officer verification (audited)
@@ -20,8 +22,11 @@ calibration marker in the image; without one, OCR/label text is still read.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -48,7 +53,7 @@ from ..db.repository import (
     stats as db_stats,
     update_report,
 )
-from ..pipeline import run_scan
+from ..pipeline import EvidenceImageInput, run_scan
 from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
 from ..vision.ocr import (
@@ -140,6 +145,33 @@ def _decode_image(data: bytes) -> np.ndarray:
     return img
 
 
+_UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_filename(name: str) -> str:
+    name = Path(name or "upload").name  # strip any directory component
+    name = _UNSAFE_FILENAME.sub("_", name)
+    return name or "upload"
+
+
+_DEFAULT_ROLES = ["front", "back"]
+
+
+def _save_uploads(report_id: str, files: List[UploadFile], raw: List[bytes]) -> List[EvidenceImageInput]:
+    """Persist the uploaded bytes as-is (not re-encoded pixels) and hash them."""
+    out_dir = get_settings().uploads_dir / report_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for idx, (f, data) in enumerate(zip(files, raw)):
+        safe = _safe_filename(f.filename or f"image_{idx}.jpg")
+        rel = f"{report_id}/{idx}_{safe}"
+        (out_dir / f"{idx}_{safe}").write_bytes(data)
+        role = _DEFAULT_ROLES[idx] if idx < len(_DEFAULT_ROLES) else "other"
+        saved.append(EvidenceImageInput(
+            path=rel, sha256="sha256:" + hashlib.sha256(data).hexdigest(), role=role))
+    return saved
+
+
 def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
     if label_text:
         return ocr_from_text(label_text)
@@ -186,7 +218,11 @@ async def scan(
             detail="category must be one of: food, cosmetic, other_non_food, unknown",
         )
 
-    decoded = [_decode_image(await f.read()) for f in images]
+    raw_bytes = [await f.read() for f in images]
+    decoded = [_decode_image(data) for data in raw_bytes]
+
+    report_id = str(uuid.uuid4())
+    evidence_images = _save_uploads(report_id, images, raw_bytes)
 
     # OCR is only needed when the LLM vision path is NOT used (it reads images
     # directly). Skipping Tesseract when AI is on removes N slow OCR passes.
@@ -213,7 +249,9 @@ async def scan(
                           panel_width_cm=panel_width_cm,
                           panel_circumference_cm=panel_circumference_cm,
                           panel_area_cm2_other=panel_area_cm2_other,
-                          category=category)
+                          category=category,
+                          report_id=report_id, evidence_images=evidence_images,
+                          save_crops=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -270,6 +308,40 @@ def fetch_scan(scan_id: str, session=Depends(get_session),
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
     return JSONResponse(content=report.model_dump(by_alias=True, mode="json"))
+
+
+@app.get("/scans/{scan_id}/images/{n}")
+def get_scan_image(scan_id: str, n: int, session=Depends(get_session),
+                   _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
+    report = get_report(session, scan_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    if n < 0 or n >= len(report.evidence.images):
+        raise HTTPException(status_code=404, detail="no such evidence image")
+    img = report.evidence.images[n]
+    path = get_settings().uploads_dir / img.file
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="evidence image file is missing")
+    return FileResponse(str(path))
+
+
+@app.get("/scans/{scan_id}/crops/{name}")
+def get_scan_crop(scan_id: str, name: str, session=Depends(get_session),
+                  _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
+    report = get_report(session, scan_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    matches = (
+        d for group in (report.declarations, report.placement, report.readability)
+        for d in group if d.id == name and d.evidence_crop
+    )
+    finding = next(matches, None)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="no such evidence crop")
+    path = get_settings().uploads_dir / finding.evidence_crop
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="evidence crop file is missing")
+    return FileResponse(str(path))
 
 
 @app.get("/scans/{scan_id}/report.pdf")

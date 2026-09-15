@@ -3,6 +3,7 @@ itself -- see test_auth.py for the real auth flow) with FastAPI TestClient
 over a temp SQLite DB."""
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 
@@ -10,9 +11,10 @@ import cv2
 import numpy as np
 import pytest
 
-# Point the app at an isolated DB BEFORE importing it.
+# Point the app at an isolated DB + uploads dir BEFORE importing it.
 _DB = os.path.join(tempfile.mkdtemp(), "api_test.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
+os.environ["UPLOADS_DIR"] = tempfile.mkdtemp()
 os.environ["METROS_AUTH_DISABLED"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -74,6 +76,32 @@ def test_scan_no_auth_and_fetch(client):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         assert docx.content[:2] == b"PK"  # DOCX is a zip archive
+
+
+def test_scan_persists_raw_upload_bytes_with_matching_hash_and_roles(client):
+    front_bytes = _marker_png(marker_id=1)
+    back_bytes = _marker_png(marker_id=1)
+    r = client.post(
+        "/scan",
+        files=[("images", ("front.png", front_bytes, "image/png")),
+               ("images", ("back.png", back_bytes, "image/png"))],
+        data={"marker_mm": "40"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    images = body["evidence"]["images"]
+    assert len(images) == 2
+    assert [i["role"] for i in images] == ["front", "back"]
+    assert images[0]["sha256"] == "sha256:" + hashlib.sha256(front_bytes).hexdigest()
+    assert images[1]["sha256"] == "sha256:" + hashlib.sha256(back_bytes).hexdigest()
+
+    got = client.get(f"/scans/{body['report_id']}/images/0")
+    assert got.status_code == 200
+    assert got.content == front_bytes  # exact uploaded bytes, not a re-encoded copy
+
+    assert client.get(f"/scans/{body['report_id']}/images/9").status_code == 404
+    assert client.get(f"/scans/{body['report_id']}/crops/nope").status_code == 404
+    assert client.get("/scans/no-such-scan/images/0").status_code == 404
 
 
 def test_scan_without_label_text_still_works(client):

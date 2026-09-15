@@ -12,6 +12,7 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./rules:/app/rules
+      - data-uploads:/app/data
 
   db:
     image: postgres:17-alpine
@@ -48,3 +49,4 @@ services:
 volumes:
   pgdata:
   minio-data:
+  data-uploads:

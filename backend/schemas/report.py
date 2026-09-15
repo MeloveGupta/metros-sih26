@@ -136,8 +136,9 @@ class Transformation(BaseModel):
 
 
 class OriginalImage(BaseModel):
-    file: str
-    sha256: str
+    file: str                              # path relative to the uploads dir
+    sha256: str                            # hash of the uploaded bytes, not re-encoded pixels
+    role: str = "other"                    # "front" | "back" | "other" | "listing"
     captured_at: Optional[datetime] = None
     width: int = 0
     height: int = 0
@@ -145,13 +146,19 @@ class OriginalImage(BaseModel):
 
 
 class Evidence(BaseModel):
-    original: OriginalImage
+    images: List[OriginalImage] = Field(default_factory=list)
     transformations: List[Transformation] = Field(default_factory=list)
     integrity_note: str = (
         "The SHA-256 hash proves the file is unaltered after capture. It does not "
         "by itself prove the subject or location, and is not a statement of "
         "court-admissibility."
     )
+
+    @property
+    def original(self) -> Optional[OriginalImage]:
+        """The first uploaded image, for the handful of call sites (repository
+        search index, report templates) that only need one representative file."""
+        return self.images[0] if self.images else None
 
 
 class Officer(BaseModel):

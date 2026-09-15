@@ -96,6 +96,13 @@ async function _downloadFile(url, filename) {
   URL.revokeObjectURL(objectUrl);
 }
 
+export async function fetchImageBlobUrl(url) {
+  const res = await fetch(url, { headers: _authHeaders() });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export function downloadPdf(reportId) {
   return _downloadFile(`/scans/${reportId}/report.pdf`, `metros-${reportId}.pdf`);
 }

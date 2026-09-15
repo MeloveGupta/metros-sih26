@@ -77,6 +77,11 @@ class Settings:
             "DATABASE_URL", f"sqlite:///{REPO_ROOT / 'data' / 'metroscan.db'}"
         )
     )
+    # Original uploaded images + declaration crops (evidence). Local disk for
+    # the prototype; a real deployment would point this at durable storage.
+    uploads_dir: Path = field(
+        default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
+    )
 
 
 def get_settings() -> Settings:

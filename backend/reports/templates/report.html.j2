@@ -58,6 +58,10 @@
   .cal b { font-family: "Courier New", monospace; }
   .note { font-size: 7.5pt; color: #5f6772; margin: 6px 0; }
   .evgrid td { border: none; padding: 2px 8px 2px 0; }
+  .evphotos { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .evphoto { width: 140px; }
+  .evphoto img { width: 100%; border: 1pt solid #16181d; display: block; }
+  .evphoto span { display: block; font-size: 7pt; color: #5f6772; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -226,6 +230,21 @@
   {% if r.legal_basis.statute %}<tr><td class="muted">Statute</td><td>{{ r.legal_basis.statute }}</td></tr>{% endif %}
   <tr><td class="muted">Rule catalog</td><td>{{ r.rule_catalog.version }}</td></tr>
 </table>
+{% if evidence_photos %}
+<div class="evphotos">
+  {% for p in evidence_photos %}
+  <figure class="evphoto"><img src="{{ p.data_uri }}" alt="{{ p.role }}"><span>{{ p.role }}</span></figure>
+  {% endfor %}
+</div>
+{% endif %}
+{% if evidence_crops %}
+<p class="muted small" style="font-size:7.5pt">Declaration crops (evidence for the extracted text):</p>
+<div class="evphotos">
+  {% for c in evidence_crops %}
+  <figure class="evphoto"><img src="{{ c.data_uri }}" alt="{{ c.label }}"><span>{{ c.label }}</span></figure>
+  {% endfor %}
+</div>
+{% endif %}
 <p class="note">{{ r.evidence.integrity_note }}</p>
 <p class="note">{{ r.limitations }}</p>
 

@@ -33,7 +33,7 @@ def _report(report_id: str, name: str, disposition: Status) -> Report:
         rule_catalog=RuleCatalogInfo(version="2011", hash="sha256:x"),
         disposition=disposition,
         product=Product(name=name, brand="Acme"),
-        evidence=Evidence(original=OriginalImage(file="a.jpg", sha256="sha256:h1")),
+        evidence=Evidence(images=[OriginalImage(file="a.jpg", sha256="sha256:h1")]),
     )
 
 

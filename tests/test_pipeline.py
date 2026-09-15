@@ -49,6 +49,23 @@ def test_full_scan_calibrated(scene_factory):
     assert "\"disposition\"" in render_json(report)
 
 
+def test_save_crops_writes_a_crop_file_and_sets_evidence_crop(scene_factory, tmp_path, monkeypatch):
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path))
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 650, 60, 90))
+    text = "MRP Rs. 45.00 (incl. of all taxes)"
+    ocr = OcrResult(text=text, tokens=[Token(text=text, bbox=meta["glyph_bbox_px"], confidence=0.9)])
+    panel = [(560, 120), (1460, 120), (1460, 680), (560, 680)]
+
+    report = run_scan(img, ocr, marker_mm=40.0, panel_polygon_px=panel,
+                      report_id="rid-crop-test", save_crops=True)
+
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.evidence_crop == "rid-crop-test/crops/mrp.png"
+    crop_path = tmp_path / "rid-crop-test" / "crops" / "mrp.png"
+    assert crop_path.is_file()
+    assert crop_path.stat().st_size > 0
+
+
 def test_full_scan_uncalibrated_no_mm(scene_factory):
     # Blank-ish scene: no marker at all.
     import numpy as np

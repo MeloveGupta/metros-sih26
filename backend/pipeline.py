@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
@@ -66,6 +68,46 @@ def _sha256_of_image(image: np.ndarray) -> str:
     if not ok:
         return "sha256:unavailable"
     return "sha256:" + hashlib.sha256(buf.tobytes()).hexdigest()
+
+
+@dataclass
+class EvidenceImageInput:
+    """One already-persisted upload: the real file on disk and the hash of its
+    actual bytes (not a re-encoding of the decoded pixels)."""
+
+    path: str                    # relative to settings.uploads_dir
+    sha256: str
+    role: str = "other"
+
+
+def _save_crops(declarations: List[DeclarationFinding], image: np.ndarray,
+                uploads_dir: Path, report_id: str) -> None:
+    """Crop + save evidence for every finding with a bbox, in-place.
+
+    `evidence_crop` is stored relative to `settings.uploads_dir`, matching how
+    original image paths are stored, so both resolve the same way when served.
+    """
+    crops_dir = uploads_dir / report_id / "crops"
+    h, w = image.shape[:2]
+    made_any = False
+    for d in declarations:
+        if d.bbox is None:
+            continue
+        x, y, bw, bh = d.bbox
+        pad = max(4, int(0.15 * max(bw, bh)))
+        x0, y0 = max(0, x - pad), max(0, y - pad)
+        x1, y1 = min(w, x + bw + pad), min(h, y + bh + pad)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        crop = image[y0:y1, x0:x1]
+        ok, buf = cv2.imencode(".png", crop)
+        if not ok:
+            continue
+        if not made_any:
+            crops_dir.mkdir(parents=True, exist_ok=True)
+            made_any = True
+        (crops_dir / f"{d.id}.png").write_bytes(buf.tobytes())
+        d.evidence_crop = f"{report_id}/crops/{d.id}.png"
 
 
 def _attach_bboxes(fields: List[FieldExtraction], tokens: Sequence[Token]) -> None:
@@ -487,6 +529,9 @@ def run_scan(
     label_text_provided: bool = False,
     common_name: Optional[str] = None,
     category: Optional[str] = None,
+    report_id: Optional[str] = None,
+    evidence_images: Optional[Sequence[EvidenceImageInput]] = None,
+    save_crops: bool = False,
 ) -> Report:
     """Run the full pipeline over one or more images (e.g. front + back).
 
@@ -611,20 +656,42 @@ def run_scan(
         warnings=extraction_warnings,
     )
 
-    # 5. Assemble report (evidence from the first image; note total count).
-    primary = images[0]
-    h, w = primary.shape[:2]
+    # 5. Assemble report. Evidence images are the real uploaded files when the
+    #    caller persisted them (API layer); otherwise fall back to hashing the
+    #    decoded pixels, which is all a bare pipeline/CLI call has.
+    report_id = report_id or str(uuid.uuid4())
+    if evidence_images:
+        default_roles = ["front", "back"]
+        original_images = []
+        for idx, img in enumerate(images):
+            ih, iw = img.shape[:2]
+            src = evidence_images[idx] if idx < len(evidence_images) else None
+            role = src.role if src else (
+                default_roles[idx] if idx < len(default_roles) else "other")
+            original_images.append(OriginalImage(
+                file=src.path if src else image_file,
+                sha256=src.sha256 if src else _sha256_of_image(img),
+                role=role, captured_at=captured_at, width=iw, height=ih,
+            ))
+    else:
+        primary = images[0]
+        h, w = primary.shape[:2]
+        original_images = [OriginalImage(
+            file=image_file, sha256=_sha256_of_image(primary),
+            role="front", captured_at=captured_at, width=w, height=h)]
+
+    if save_crops:
+        _save_crops(declarations, marker_image, settings.uploads_dir, report_id)
+
     report = Report(
-        report_id=str(uuid.uuid4()),
+        report_id=report_id,
         generated_at=datetime.now(timezone.utc),
         app_version=APP_VERSION,
         rule_catalog=RuleCatalogInfo(version=catalog.version, hash=catalog.hash),
         disposition=disposition,
         inspection=inspection or Inspection(),
         product=product or Product(),
-        evidence=Evidence(original=OriginalImage(
-            file=image_file, sha256=_sha256_of_image(primary),
-            captured_at=captured_at, width=w, height=h)),
+        evidence=Evidence(images=original_images),
         calibration=_to_calibration_schema(cal),
         extraction=extraction,
         summary=summary,

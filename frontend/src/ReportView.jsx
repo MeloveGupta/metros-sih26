@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { downloadDocx, downloadPdf, finalize } from "./api.js";
+import React, { useEffect, useMemo, useState } from "react";
+import { downloadDocx, downloadPdf, fetchImageBlobUrl, finalize } from "./api.js";
 
 function Pill({ status }) {
   return <span className={`pill s-${status}`}>{status.replace(/_/g, " ")}</span>;
@@ -37,6 +37,41 @@ function itemsNeedingReview(report) {
   return report.declarations
     .filter((d) => d.status === "potential_non_compliance")
     .map((d) => ({ id: d.id, label: d.label, status: d.status }));
+}
+
+function EvidenceStrip({ report }) {
+  const images = report.evidence?.images || [];
+  const [urls, setUrls] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const made = [];
+    images.forEach((_, i) => {
+      fetchImageBlobUrl(`/scans/${report.report_id}/images/${i}`).then((url) => {
+        if (cancelled || !url) return;
+        made.push(url);
+        setUrls((u) => ({ ...u, [i]: url }));
+      });
+    });
+    return () => {
+      cancelled = true;
+      made.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [report.report_id, images.length]);
+
+  if (!images.length) return null;
+  return (
+    <div className="evstrip">
+      {images.map((img, i) => (
+        <figure className="evthumb" key={i}>
+          {urls[i]
+            ? <img src={urls[i]} alt={img.role} />
+            : <span className="evthumb-loading muted small">loading…</span>}
+          <figcaption className="muted small">{img.role}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
 }
 
 function Verification({ report, onFinalized }) {
@@ -189,6 +224,8 @@ export default function ReportView({ report, onUpdate }) {
         {cal.corner_jitter_px != null && <span className="mono muted">corner jitter {cal.corner_jitter_px.toFixed(2)}px</span>}
         {cal.reason && <span className="muted">{cal.reason}</span>}
       </div>
+
+      <EvidenceStrip report={report} />
 
       <h3 className="sec"><span className="sec-no mono">01</span> Declarations · Rule 6</h3>
       <ul className="declist">

@@ -229,6 +229,12 @@ button { font: inherit; }
 .calbar .dot.on { background: var(--ink); }
 .calbar .dot.off { background: var(--card); }
 
+.evstrip { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
+.evthumb { margin: 0; width: 84px; }
+.evthumb img { width: 100%; aspect-ratio: 1; object-fit: cover; border: var(--bd) solid var(--ink); display: block; }
+.evthumb-loading { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; border: var(--bd) dashed var(--g2); }
+.evthumb figcaption { text-align: center; margin-top: 4px; text-transform: uppercase; font-weight: 700; }
+
 .sec {
   display: flex; align-items: center; gap: 12px; margin: 32px 0 12px;
   font-weight: 800; font-size: var(--t-h3); line-height: 1; text-transform: uppercase; letter-spacing: -0.01em;

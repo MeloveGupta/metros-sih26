@@ -9,8 +9,10 @@ silently.
 """
 from __future__ import annotations
 
+import base64
+import mimetypes
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -25,6 +27,38 @@ _STATUS_LABEL = {
     "not_assessable": "NOT ASSESSABLE",
     "not_applicable": "NOT APPLICABLE",
 }
+
+
+def _data_uri(rel_path: str) -> Optional[str]:
+    """Base64-inline a stored evidence file so PDF/DOCX rendering doesn't need
+    file-system access configuration (WeasyPrint) or a second pass (DOCX)."""
+    path = get_settings().uploads_dir / rel_path
+    if not path.is_file():
+        return None
+    mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{data}"
+
+
+def _evidence_photos(report: Report) -> List[dict]:
+    out = []
+    for img in report.evidence.images:
+        uri = _data_uri(img.file)
+        if uri:
+            out.append({"role": img.role, "file": img.file, "data_uri": uri})
+    return out
+
+
+def _evidence_crops(report: Report) -> List[dict]:
+    out = []
+    for group in (report.declarations, report.placement, report.readability):
+        for d in group:
+            if not d.evidence_crop:
+                continue
+            uri = _data_uri(d.evidence_crop)
+            if uri:
+                out.append({"label": d.label, "data_uri": uri})
+    return out
 
 
 def render_json(report: Report, indent: int = 2) -> str:
@@ -43,7 +77,8 @@ def _environment(template_dir: Optional[Path]) -> Environment:
 def render_html(report: Report, template_dir: Optional[Path] = None) -> str:
     env = _environment(template_dir)
     template = env.get_template("report.html.j2")
-    return template.render(r=report)
+    return template.render(r=report, evidence_photos=_evidence_photos(report),
+                           evidence_crops=_evidence_crops(report))
 
 
 def render_pdf(report: Report, out_path: Path, template_dir: Optional[Path] = None) -> Path:
@@ -84,6 +119,7 @@ def render_docx(report: Report, out_path: Path) -> Path:
     from the same `Report` object, so the two formats never diverge."""
     try:
         from docx import Document  # heavy-ish; import lazily like render_pdf
+        from docx.shared import Inches
     except Exception as exc:  # ImportError
         raise MetrosError(
             "DOCX rendering requires python-docx. Install per requirements.txt. "
@@ -207,6 +243,19 @@ def render_docx(report: Report, out_path: Path) -> Path:
         f"Resolution: {report.evidence.original.width} × {report.evidence.original.height} px"
     )
     doc.add_paragraph(f"SHA-256: {report.evidence.original.sha256}")
+    for img in report.evidence.images:
+        path = get_settings().uploads_dir / img.file
+        if path.is_file():
+            doc.add_paragraph(f"Photo ({img.role}):")
+            doc.add_picture(str(path), width=Inches(3.0))
+    for group in (report.declarations, report.placement, report.readability):
+        for d in group:
+            if not d.evidence_crop:
+                continue
+            path = get_settings().uploads_dir / d.evidence_crop
+            if path.is_file():
+                doc.add_paragraph(f"Evidence crop -- {d.label}:")
+                doc.add_picture(str(path), width=Inches(2.0))
     if report.legal_basis.get("statute"):
         doc.add_paragraph(f"Statute: {report.legal_basis['statute']}")
     doc.add_paragraph(f"Rule catalog: {report.rule_catalog.version}")
