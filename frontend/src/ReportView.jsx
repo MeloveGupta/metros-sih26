@@ -253,6 +253,26 @@ export default function ReportView({ report, onUpdate }) {
         </>
       )}
 
+      {report.readability && report.readability.length > 0 && (
+        <>
+          <h3 className="sec"><span className="sec-no mono">04</span> Readability · Rule 9</h3>
+          <ul className="declist">
+            {report.readability.map((p) => (
+              <li className="decl" key={p.id}>
+                <div className="decl-main">
+                  <span className="decl-label">{p.label}</span>
+                  <span className="decl-clause mono">{p.clause_ref.clause}</span>
+                </div>
+                <div className="decl-value">
+                  <span className="decl-text muted">{p.note || ""}</span>
+                </div>
+                <Pill status={p.status} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <Verification report={report} onFinalized={onUpdate} />
 
       {/* Download only after the officer finalizes (or when nothing needs review). */}

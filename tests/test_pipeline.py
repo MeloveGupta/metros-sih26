@@ -299,6 +299,76 @@ def test_condensed_font_flagged_end_to_end(scene_factory):
     assert "Rule 7(3)" in item.reason
 
 
+# --- 2.10: readability beyond letter height (Rule 9) ---
+
+def _low_contrast_bbox(img, x0, y0, w, h, pad_in=20):
+    """A light-grey "ink" rectangle inset within a white-background bbox, so
+    Otsu has both a foreground and background class to split on."""
+    cv2.rectangle(img, (x0 + pad_in, y0 + pad_in), (x0 + w - pad_in, y0 + h - pad_in),
+                 (210, 210, 210), -1)
+    return (x0, y0, w, h)
+
+
+def test_contrast_flags_low_contrast_mrp(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    bbox = _low_contrast_bbox(img, 600, 780, 200, 90)
+    text = "MRP Rs. 45.00 (incl. of all taxes)"
+    tok = Token(text=text, bbox=bbox, confidence=0.9)
+    report = run_scan(img, OcrResult(text=text, tokens=[tok]), marker_mm=40.0)
+
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.POTENTIAL_NON_COMPLIANCE
+    assert "low contrast" in mrp.note
+
+
+def test_contrast_check_skipped_when_molded(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400, pad=250)
+    bbox = _low_contrast_bbox(img, 600, 780, 200, 90)
+    text = "MRP Rs. 45.00 (incl. of all taxes)"
+    tok = Token(text=text, bbox=bbox, confidence=0.9)
+    report = run_scan(img, OcrResult(text=text, tokens=[tok]), marker_mm=40.0, molded=True)
+
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT  # contrast check skipped for molded packages
+
+
+def test_blur_warns_and_upgrades_not_detected_to_not_assessable(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    blurred = cv2.GaussianBlur(img, (25, 25), sigmaX=12.0)
+    text = "MRP Rs. 45.00 (incl. of all taxes)"  # no consumer_care mentioned
+    report = run_scan(blurred, ocr_from_text(text), extract_backend="regex")
+
+    assert any("image_quality" in w and "blurry" in w for w in report.extraction.warnings)
+    consumer_care = next(d for d in report.declarations if d.id == "consumer_care")
+    assert consumer_care.status == Status.NOT_ASSESSABLE
+    assert "image quality" in consumer_care.note
+
+
+def test_language_flag_when_neither_latin_nor_devanagari(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    text = "净含量 200克 价格 45.00元"  # Chinese only -- no Latin, no Devanagari
+    report = run_scan(img, ocr_from_text(text), marker_mm=40.0, extract_backend="regex")
+
+    lang = next(r for r in report.readability if r.id == "readability_language")
+    assert lang.status == Status.NOT_ASSESSABLE
+    assert "Rule 9(4)" in lang.clause_ref.clause
+
+
+def test_language_passes_with_english_text(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    report = run_scan(img, ocr_from_text("MRP Rs. 45.00 (incl. of all taxes)"), marker_mm=40.0)
+    lang = next(r for r in report.readability if r.id == "readability_language")
+    assert lang.status == Status.COMPLIANT
+
+
+def test_sticker_checklist_item_always_present(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    report = run_scan(img, ocr_from_text("MRP Rs. 45.00 (incl. of all taxes)"), marker_mm=40.0)
+    stickers = next(r for r in report.readability if r.id == "readability_stickers")
+    assert stickers.status == Status.NOT_ASSESSABLE
+    assert "Rule 6(3)" in stickers.clause_ref.clause
+
+
 # --- 2.5: category-based applicability & exemptions ---
 
 def test_category_food_exempts_manufacturer_and_mfg_date(scene_factory):

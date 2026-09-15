@@ -14,6 +14,7 @@ from backend.vision.measure import (
     panel_area_cm2,
 )
 from backend.vision.glyphs import extract_glyph_boxes
+from backend.vision.quality import blur_score, glare_fraction, measure_contrast
 
 
 def test_detect_scale_frontal_recovers_mm_per_pixel(scene_factory):
@@ -202,3 +203,38 @@ def test_glyph_height_from_boxes_uses_median(scene_factory):
     # 90px tall at 0.1mm/px => 9.0mm, same as the whole-token measurement here
     # since all three synthetic glyphs are the same height.
     assert m.value == pytest.approx(9.0, rel=0.05)
+
+
+# --- 2.10: readability beyond letter height (Rule 9) ---
+
+def test_measure_contrast_high_for_black_on_white():
+    img = np.full((100, 100, 3), 255, np.uint8)
+    cv2.rectangle(img, (20, 20), (80, 80), (0, 0, 0), -1)
+    ratio = measure_contrast(img, (0, 0, 100, 100))
+    assert ratio is not None
+    assert ratio > 10.0  # black-on-white is near-maximal WCAG contrast (21:1)
+
+
+def test_measure_contrast_low_for_light_gray_on_white():
+    img = np.full((100, 100, 3), 255, np.uint8)
+    cv2.rectangle(img, (20, 20), (80, 80), (210, 210, 210), -1)
+    ratio = measure_contrast(img, (0, 0, 100, 100))
+    assert ratio is not None
+    assert ratio < 2.0  # light grey on white is barely distinguishable
+
+
+def test_blur_score_lower_for_blurred_image():
+    sharp = np.full((200, 200, 3), 255, np.uint8)
+    for i in range(0, 200, 10):
+        cv2.line(sharp, (i, 0), (i, 200), (0, 0, 0), 1)
+    blurred = cv2.GaussianBlur(sharp, (15, 15), sigmaX=6.0)
+    assert blur_score(blurred) < blur_score(sharp)
+
+
+def test_glare_fraction_detects_saturated_patch():
+    img = np.full((100, 100, 3), 128, np.uint8)
+    clean = glare_fraction(img)
+    cv2.rectangle(img, (10, 10), (90, 90), (255, 255, 255), -1)
+    glare = glare_fraction(img)
+    assert glare > clean
+    assert glare > 0.5

@@ -238,3 +238,32 @@ quantity_declaration:
   nonstandard_spellings:
     clause: "Rule 13(5)"
     units: ["gm", "gms", "ltr"]
+
+# --- Rule 9: readability beyond letter height ---
+# min_contrast_ratio/min_blur_variance/max_glare_fraction are heuristics for
+# this tool, not figures given in the Rules themselves -- reported as such.
+readability:
+  contrast:
+    clause: "Rule 9(1)(b)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    min_contrast_ratio: 4.5   # WCAG AA text-contrast heuristic
+    # Exempt when blown/formed/moulded on glass or plastic (Rule 9(1)(b) proviso).
+
+  image_quality:
+    min_blur_variance: 50.0    # variance of Laplacian; heuristic
+    max_glare_fraction: 0.15   # fraction of near-saturated pixels; heuristic
+
+  language:
+    clause: "Rule 9(4)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    # Declarations must be in Hindi (Devanagari) or English.
+
+  stickers:
+    clause: "Rule 6(3)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    # Stickers altering mandatory declarations are barred (except a
+    # lower-MRP sticker not covering the original MRP); not auto-detected --
+    # always routed to officer review as a checklist item.

@@ -221,7 +221,9 @@ LIMITATIONS_TEXT = (
     "width-ratio measurement uses individual glyph boxes only for digits and "
     "uppercase letters, which have an unambiguous cap height; lowercase "
     "x-height (ascenders/descenders) is not used, so a lowercase-only "
-    "declaration falls back to a whole-word measurement. Authorised physical "
+    "declaration falls back to a whole-word measurement. Contrast, blur and "
+    "glare thresholds (Rule 9 readability) are heuristics chosen for this "
+    "tool, not figures given in the Rules themselves. Authorised physical "
     "measurement remains necessary for any enforcement action."
 )
 
@@ -243,6 +245,7 @@ class Report(BaseModel):
     summary: Summary = Field(default_factory=Summary)
     declarations: List[DeclarationFinding] = Field(default_factory=list)
     placement: List[DeclarationFinding] = Field(default_factory=list)
+    readability: List[DeclarationFinding] = Field(default_factory=list)
     font_analysis: FontAnalysis = Field(default_factory=FontAnalysis)
     legal_basis: dict = Field(default_factory=dict)
     officer_actions: List[OfficerAction] = Field(default_factory=list)

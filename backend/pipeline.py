@@ -8,6 +8,7 @@ and no millimetre verdict is emitted.
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Sequence, Tuple
@@ -46,12 +47,16 @@ from .vision.measure import (
 from .vision.card import card_outline_mm
 from .vision.glyphs import extract_glyph_boxes
 from .vision.ocr import OcrResult, Token
+from .vision.quality import blur_score, glare_fraction, measure_contrast
 from .vision.scale import CalibrationResult, detect_scale
 
 # Only digits and uppercase letters have a reliable, unambiguous cap height
 # for glyph-box measurement; lowercase x-height/ascenders/descenders are not
 # used (see LIMITATIONS_TEXT).
 _MEASURABLE_CHARS = set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+_DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
 
 APP_VERSION = "0.1.0"
 
@@ -187,7 +192,6 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     """
     if not cal.calibrated or not tokens:
         return FontInputs()
-    import re
     mean_side = _mean_side_px(cal)
     card_poly_px = _card_polygon_px(cal)
 
@@ -344,6 +348,97 @@ def _placement_findings(catalog: RuleCatalog, fields: List[FieldExtraction],
     return findings
 
 
+def _apply_contrast_checks(declarations: List[DeclarationFinding], image, molded: bool,
+                           catalog: RuleCatalog) -> None:
+    """Rule 9(1)(b): MRP and net-quantity numerals must contrast conspicuously
+    with the background. Exempt when blown/formed/moulded on glass or plastic."""
+    if image is None or molded:
+        return
+    ccfg = catalog.readability.get("contrast", {})
+    threshold = float(ccfg.get("min_contrast_ratio", 4.5))
+    clause = ccfg.get("clause", "Rule 9(1)(b)")
+    for d in declarations:
+        if d.id not in ("mrp", "net_quantity") or d.bbox is None:
+            continue
+        try:
+            ratio = measure_contrast(image, d.bbox)
+        except Exception:
+            continue
+        if ratio is None or ratio >= threshold:
+            continue
+        note = f"low contrast ({ratio:.1f}:1, heuristic minimum {threshold:.1f}:1; {clause})"
+        d.note = f"{d.note}; {note}" if d.note else note
+        if d.status == Status.COMPLIANT:
+            d.status = Status.POTENTIAL_NON_COMPLIANCE
+
+
+def _apply_image_quality(declarations: List[DeclarationFinding], image,
+                         catalog: RuleCatalog) -> List[str]:
+    """Blur/glare gate: below/above threshold, warn and treat any not_detected
+    declaration as not_assessable instead (the photo may simply be unreadable,
+    not evidence the declaration is actually missing)."""
+    if image is None:
+        return []
+    qcfg = catalog.readability.get("image_quality", {})
+    min_blur = float(qcfg.get("min_blur_variance", 50.0))
+    max_glare = float(qcfg.get("max_glare_fraction", 0.15))
+    warnings: List[str] = []
+    try:
+        blur = blur_score(image)
+        glare = glare_fraction(image)
+    except Exception:
+        return warnings
+    if blur < min_blur:
+        warnings.append(f"image_quality: retake photo (blurry -- sharpness {blur:.0f} "
+                        f"below the {min_blur:.0f} heuristic threshold)")
+    if glare > max_glare:
+        warnings.append(f"image_quality: retake photo (glare -- {glare * 100:.0f}% of pixels "
+                        f"saturated, above the {max_glare * 100:.0f}% heuristic threshold)")
+    if warnings:
+        for d in declarations:
+            if d.status == Status.NOT_DETECTED:
+                d.status = Status.NOT_ASSESSABLE
+                extra = "image quality too poor to reliably read (blurry/glare)"
+                d.note = f"{extra}; {d.note}" if d.note else extra
+    return warnings
+
+
+def _readability_findings(catalog: RuleCatalog, combined_text: str) -> List[DeclarationFinding]:
+    """Rule 9(4) language, and a standing Rule 6(3) sticker checklist item
+    (never auto-detected, always routed to officer review)."""
+    rcfg = catalog.readability
+    findings: List[DeclarationFinding] = []
+
+    sticker_cfg = rcfg.get("stickers", {})
+    findings.append(DeclarationFinding(
+        id="readability_stickers", label="Check for stickers altering mandatory declarations",
+        clause_ref=ClauseRef(clause=sticker_cfg.get("clause", "Rule 6(3)"),
+                             gazette=sticker_cfg.get("gazette"),
+                             effective_from=sticker_cfg.get("effective_from")),
+        status=Status.NOT_ASSESSABLE,
+        note="not auto-detected; officer must check for stickers over declarations",
+    ))
+
+    lang_cfg = rcfg.get("language", {})
+    text = combined_text or ""
+    if not text.strip():
+        status, note = Status.NOT_ASSESSABLE, "no text read to check language"
+    elif _DEVANAGARI_RE.search(text) or _LATIN_RE.search(text):
+        status, note = Status.COMPLIANT, None
+    else:
+        status, note = (
+            Status.NOT_ASSESSABLE,
+            "neither Hindi (Devanagari) nor English detected in the read text; verify",
+        )
+    findings.append(DeclarationFinding(
+        id="readability_language", label="Declarations in Hindi (Devanagari) or English",
+        clause_ref=ClauseRef(clause=lang_cfg.get("clause", "Rule 9(4)"),
+                             gazette=lang_cfg.get("gazette"), effective_from=lang_cfg.get("effective_from")),
+        status=status, note=note,
+    ))
+    return findings
+
+
 def _to_calibration_schema(cal: CalibrationResult) -> Calibration:
     return Calibration(
         reference="aruco_card",
@@ -487,7 +582,14 @@ def run_scan(
         category=category,
     )
 
-    extraction_warnings: List[str] = []
+    # Rule 9 readability: contrast (mrp/net_quantity only), image quality
+    # (blur/glare -- gates not_detected -> not_assessable), language, stickers.
+    # Contrast needs the SAME image the bboxes were measured on (marker_image);
+    # image quality (blur/glare) is judged on the primary evidence image.
+    _apply_contrast_checks(declarations, marker_image, molded, catalog)
+    extraction_warnings: List[str] = _apply_image_quality(declarations, images[0], catalog)
+    readability = _readability_findings(catalog, combined_text)
+
     if category is None or category == "unknown":
         extraction_warnings.append(
             "product category not specified; no food/cosmetic exemptions applied"
@@ -528,6 +630,7 @@ def run_scan(
         summary=summary,
         declarations=declarations,
         placement=placement,
+        readability=readability,
         font_analysis=font_analysis,
         legal_basis={"statute": ", ".join(
             p for p in (catalog.statute.get("section"), catalog.statute.get("act"))
