@@ -45,8 +45,16 @@ _QTY_NUM = re.compile(
     re.IGNORECASE,
 )
 
-_MFG_CUE = re.compile(
-    r"(mfg|manufactured|mfd|packed|pkd|packaging)\b.*?"
+# Rule 6(1)(d): "or pre-packed or imported" was omitted vide GSR 779(E)/226(E)
+# w.e.f. 01-10-2022, so only a manufacturing-date cue satisfies the clause now
+# -- a packing-date cue is tracked separately and flagged, not accepted.
+_MFR_DATE_CUE = re.compile(
+    r"(mfg|manufactured|mfd|date\s+of\s+manufacture)\b.*?"
+    rf"((?:{_MONTHS})[\s./-]*\d{{2,4}}|\d{{1,2}}[/\-.]\d{{2,4}})",
+    re.IGNORECASE,
+)
+_PACK_DATE_CUE = re.compile(
+    r"(packed|pkd|packing\s+date|date\s+of\s+packing|packaging)\b.*?"
     rf"((?:{_MONTHS})[\s./-]*\d{{2,4}}|\d{{1,2}}[/\-.]\d{{2,4}})",
     re.IGNORECASE,
 )
@@ -295,16 +303,29 @@ def parse_net_quantity(text: str) -> FieldExtraction:
 
 
 def parse_mfg_date(text: str) -> FieldExtraction:
-    m = _MFG_CUE.search(text) or None
+    m = _MFR_DATE_CUE.search(text)
     if m:
         return FieldExtraction(id="mfg_date", present=True, value=m.group(0).strip(),
-                               format_pass=True, format_pattern="month & year")
+                               format_pass=True, format_pattern="month & year of manufacture")
+    p = _PACK_DATE_CUE.search(text)
+    if p:
+        # Since 01-10-2022 (GSR 779(E)/226(E)) a packing date alone no longer
+        # satisfies Rule 6(1)(d) -- it needs month & year of MANUFACTURE.
+        return FieldExtraction(
+            id="mfg_date", present=True, value=p.group(0).strip(), format_pass=False,
+            format_detail=(
+                "only a packing date found; since 01-10-2022 the rule requires month "
+                "and year of manufacture; verify"
+            ),
+            format_pattern="month & year of manufacture",
+        )
     d = _DATE_ANY.search(text)
     if d:
-        # Date present but not clearly tied to a mfg/pack cue -> flag for check.
+        # Date present but not clearly tied to a manufacture/pack cue -> flag.
         return FieldExtraction(id="mfg_date", present=True, value=d.group(0).strip(),
                                format_pass=False,
-                               format_pattern="month & year with mfg/pack cue")
+                               format_detail="date found but not clearly tied to a manufacture cue; verify",
+                               format_pattern="month & year of manufacture")
     return FieldExtraction(id="mfg_date", present=False)
 
 

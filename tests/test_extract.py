@@ -6,6 +6,7 @@ from backend.extract.fields import (
     parse_common_name,
     parse_consumer_care,
     parse_manufacturer,
+    parse_mfg_date,
     parse_mrp,
     parse_net_quantity,
     parse_unit_sale_price,
@@ -125,6 +126,23 @@ def test_manufacturer_pin_scoped_to_manufacturer_block():
     assert f.present is True
     assert f.format_pass is False
     assert "no PIN code" in f.format_detail
+
+
+# --- 2.4: month & year of manufacture, Rule 6(1)(d) ---
+
+def test_mfg_date_cue_passes():
+    f = parse_mfg_date("Mfg: Aug 2026")
+    assert f.present and f.format_pass is True
+
+
+def test_packing_only_date_is_flagged_not_passed():
+    f = parse_mfg_date("Packed on: Aug 2026")
+    assert f.present is True
+    assert f.format_pass is False
+    assert f.format_detail == (
+        "only a packing date found; since 01-10-2022 the rule requires month "
+        "and year of manufacture; verify"
+    )
 
 
 # --- 2.1: unit sale price, Rule 6(11) ---

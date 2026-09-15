@@ -58,9 +58,15 @@ declarations:
     checks: [present, unit_standard]
 
   - id: mfg_date
-    label: Month & year of manufacture / pre-packing
+    label: Month & year of manufacture
     clause: "Rule 6(1)(d)"
+    gazette: "GSR 779(E), 02-11-2021, as amended by GSR 226(E), 28-03-2022"
+    effective_from: "2022-10-01"
     checks: [present, month_year_format]
+    # "or pre-packed or imported" was omitted vide GSR 779(E)/226(E), so a
+    # packing-only date no longer satisfies this clause; the rule's own
+    # provisos still exempt bidi/incense-sticks/certain LPG cylinders and
+    # (from 2.5) food/cosmetic categories governed by other laws.
 
   - id: best_before
     label: Best before / use-by date (perishable commodities)
