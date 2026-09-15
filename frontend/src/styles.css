@@ -315,6 +315,43 @@ button { font: inherit; }
 .dl.ghost { color: var(--ink); background: var(--card); }
 .dl:hover { transform: translate(2px, 2px); box-shadow: var(--shadow-press); }
 
+/* ---- Tabs ---- */
+.tabs { display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }
+.tab {
+  font-family: var(--font); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+  font-size: var(--t-label); border: var(--bd) solid var(--ink); background: var(--card); color: var(--ink);
+  padding: 9px 16px; cursor: pointer;
+}
+.tab:hover { background: var(--g1); }
+.tab.on { background: var(--ink); color: var(--card); }
+
+/* ---- History ---- */
+.histrow {
+  width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  background: var(--card); appearance: none; border: 0; border-bottom: 1.5px solid var(--ink);
+}
+.histrow:last-child { border-bottom: 0; }
+.histrow:hover { background: var(--g1); }
+.histrow:disabled { opacity: .6; cursor: default; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.pager .ghost {
+  font-family: var(--font); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+  font-size: var(--t-micro); border: var(--bd) solid var(--ink); background: var(--card); color: var(--ink);
+  padding: 8px 14px; cursor: pointer;
+}
+.pager .ghost:hover { background: var(--g1); }
+.pager .ghost:disabled { opacity: .4; cursor: default; }
+
+/* ---- Dashboard charts ---- */
+.chart { margin-top: 28px; }
+.chart-title { margin: 0 0 12px; font-size: var(--t-label); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+.chart-row { display: grid; grid-template-columns: 9rem 1fr 3rem; align-items: center; gap: 10px; margin: 8px 0; }
+.chart-label { font-size: var(--t-label); font-weight: 700; overflow-wrap: anywhere; }
+.chart-track { height: 14px; border: var(--bd) solid var(--ink); background: var(--card); }
+.chart-fill { display: block; height: 100%; background: var(--ink); }
+.chart-val { font-size: var(--t-label); font-weight: 700; text-align: right; }
+@media (max-width: 500px) { .chart-row { grid-template-columns: 6rem 1fr 2.5rem; } }
+
 .muted { color: var(--sub); }
 .foot { color: var(--sub); font-size: var(--t-label); font-weight: 500; margin-top: 34px; padding-top: 18px;
   border-top: var(--bd) solid var(--ink); max-width: 66ch; }

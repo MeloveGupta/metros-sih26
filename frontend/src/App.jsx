@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { logout, scan } from "./api.js";
+import Dashboard from "./Dashboard.jsx";
+import History from "./History.jsx";
 import Login from "./Login.jsx";
 import ReportView from "./ReportView.jsx";
 
@@ -56,6 +58,8 @@ function PanelDimensions({ shape, setShape, dims, setDims }) {
 
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
+  const [productName, setProductName] = useState("");
+  const [brand, setBrand] = useState("");
   const [commonName, setCommonName] = useState("");
   const [category, setCategory] = useState("unknown");
   const [panelShape, setPanelShape] = useState("");
@@ -89,7 +93,7 @@ function ScanForm({ onReport }) {
     setErr("");
     try {
       onReport(await scan({
-        files: shots.map((s) => s.file), commonName, category,
+        files: shots.map((s) => s.file), productName, brand, commonName, category,
         panel: { shape: panelShape, ...panelDims },
       }));
     } catch (e2) {
@@ -136,6 +140,19 @@ function ScanForm({ onReport }) {
       </div>
       <label htmlFor="galimg" className="gallery-link">or choose from gallery</label>
 
+      <div className="grid2">
+        <label className="field">
+          <span>Product name</span>
+          <input value={productName} placeholder="e.g. Tasty Masala Chips"
+            onChange={(e) => setProductName(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Brand</span>
+          <input value={brand} placeholder="e.g. Acme Foods"
+            onChange={(e) => setBrand(e.target.value)} />
+        </label>
+      </div>
+
       <label className="field">
         <span>Generic name of the product</span>
         <input value={commonName} placeholder="e.g. tomato ketchup"
@@ -166,11 +183,17 @@ function ScanForm({ onReport }) {
 export default function App() {
   const [session, setSession] = useState(null); // { name, role }
   const [report, setReport] = useState(null);
+  const [tab, setTab] = useState("scan"); // scan | history | dashboard
 
   function signOut() {
     logout();
     setSession(null);
     setReport(null);
+  }
+
+  function openReportFromHistory(r) {
+    setReport(r);
+    setTab("scan");
   }
 
   return (
@@ -192,8 +215,23 @@ export default function App() {
           <Login onSignedIn={setSession} />
         ) : (
           <>
-            <ScanForm onReport={setReport} />
-            {report && <ReportView report={report} onUpdate={setReport} />}
+            <nav className="tabs">
+              <button type="button" className={`tab${tab === "scan" ? " on" : ""}`}
+                onClick={() => setTab("scan")}>Scan</button>
+              <button type="button" className={`tab${tab === "history" ? " on" : ""}`}
+                onClick={() => setTab("history")}>History</button>
+              <button type="button" className={`tab${tab === "dashboard" ? " on" : ""}`}
+                onClick={() => setTab("dashboard")}>Dashboard</button>
+            </nav>
+
+            {tab === "scan" && (
+              <>
+                <ScanForm onReport={setReport} />
+                {report && <ReportView report={report} onUpdate={setReport} />}
+              </>
+            )}
+            {tab === "history" && <History onOpenReport={openReportFromHistory} />}
+            {tab === "dashboard" && <Dashboard />}
           </>
         )}
       </main>

@@ -13,6 +13,7 @@ from backend.db.repository import (
     save_report,
     search_scans,
     session_factory,
+    stats,
 )
 from backend.schemas.report import (
     Evidence,
@@ -58,11 +59,39 @@ def test_search_by_disposition_and_name(session):
     save_report(session, _report("r1", "Chips", Status.COMPLIANT))
     save_report(session, _report("r2", "Biscuits", Status.POTENTIAL_NON_COMPLIANCE))
 
-    flagged = search_scans(session, disposition="potential_non_compliance")
-    assert len(flagged) == 1 and flagged[0].id == "r2"
+    flagged, flagged_total = search_scans(session, disposition="potential_non_compliance")
+    assert flagged_total == 1 and flagged[0].id == "r2"
 
-    by_name = search_scans(session, product_name="chip")
-    assert len(by_name) == 1 and by_name[0].id == "r1"
+    by_name, by_name_total = search_scans(session, product_name="chip")
+    assert by_name_total == 1 and by_name[0].id == "r1"
+
+
+def test_search_paging_reports_total_separately_from_page_size(session):
+    for i in range(5):
+        save_report(session, _report(f"r{i}", f"Product {i}", Status.COMPLIANT))
+    rows, total = search_scans(session, limit=2, offset=0)
+    assert total == 5
+    assert len(rows) == 2
+
+
+def test_search_filters_finalized_and_rule7_flag(session):
+    from backend.schemas.report import DeclarationFinding, FontAnalysis, FontItem, ClauseRef
+
+    finalized = _report("r-fin", "Finalized Product", Status.COMPLIANT)
+    finalized.finalized_at = datetime(2026, 9, 4, tzinfo=timezone.utc)
+    save_report(session, finalized)
+
+    flagged_font = _report("r-font", "Flagged Font Product", Status.POTENTIAL_NON_COMPLIANCE)
+    flagged_font.font_analysis = FontAnalysis(items=[
+        FontItem(declaration_id="mrp", status=Status.POTENTIAL_NON_COMPLIANCE, reason="too small"),
+    ])
+    save_report(session, flagged_font)
+
+    rows, total = search_scans(session, finalized=True)
+    assert total == 1 and rows[0].id == "r-fin"
+
+    rows, total = search_scans(session, has_rule7_flag=True)
+    assert total == 1 and rows[0].id == "r-font"
 
 
 def test_audit_log(session):
@@ -77,3 +106,15 @@ def test_idempotent_init_db():
     engine = make_engine("sqlite:///:memory:")
     init_db(engine)
     init_db(engine)  # must not raise
+
+
+def test_stats_aggregates_disposition_and_calibration(session):
+    save_report(session, _report("r1", "Chips", Status.COMPLIANT))
+    save_report(session, _report("r2", "Biscuits", Status.POTENTIAL_NON_COMPLIANCE))
+
+    result = stats(session)
+    assert result["total"] == 2
+    assert result["by_disposition"]["compliant"] == 1
+    assert result["by_disposition"]["potential_non_compliance"] == 1
+    assert result["pct_calibrated"] == 0.0  # neither _report() fixture calibrates
+    assert "scans_per_day" in result and "most_flagged_declarations" in result

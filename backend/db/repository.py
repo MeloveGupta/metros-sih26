@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import get_settings
-from ..schemas.report import Report
+from ..schemas.report import Report, Status
 from .models import AuditLog, Base, ProductRow, ScanRow, User
 
 
@@ -49,6 +50,10 @@ def session_factory(engine: Engine) -> sessionmaker:
 
 # --- scans ---
 
+def _has_rule7_flag(report: Report) -> bool:
+    return any(i.status == Status.POTENTIAL_NON_COMPLIANCE for i in report.font_analysis.items)
+
+
 def save_report(session: Session, report: Report,
                 created_by: Optional[str] = None) -> ScanRow:
     """Persist a report (and its product, if named) and return the scan row."""
@@ -71,6 +76,8 @@ def save_report(session: Session, report: Report,
         disposition=report.disposition.value,
         calibrated=report.calibration.verdict.value,
         sha256=report.evidence.original.sha256,
+        finalized=report.finalized_at is not None,
+        has_rule7_flag=_has_rule7_flag(report),
         report_json=report.model_dump_json(by_alias=True),
         created_by=created_by,
     )
@@ -92,6 +99,8 @@ def update_report(session: Session, report: Report) -> Optional[ScanRow]:
     if row is None:
         return None
     row.disposition = report.disposition.value
+    row.finalized = report.finalized_at is not None
+    row.has_rule7_flag = _has_rule7_flag(report)
     row.report_json = report.model_dump_json(by_alias=True)
     session.commit()
     return row
@@ -103,19 +112,90 @@ def search_scans(
     disposition: Optional[str] = None,
     sha256: Optional[str] = None,
     product_name: Optional[str] = None,
+    brand: Optional[str] = None,
+    category: Optional[str] = None,
+    finalized: Optional[bool] = None,
+    has_rule7_flag: Optional[bool] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
     limit: int = 50,
     offset: int = 0,
-) -> List[ScanRow]:
+) -> Tuple[List[ScanRow], int]:
+    """Search scans with paging. Returns (rows for this page, total matches)."""
     stmt = select(ScanRow)
+    if product_name or brand or category:
+        stmt = stmt.join(ProductRow, ScanRow.product_id == ProductRow.id)
+        if product_name:
+            stmt = stmt.where(ProductRow.name.ilike(f"%{product_name}%"))
+        if brand:
+            stmt = stmt.where(ProductRow.brand.ilike(f"%{brand}%"))
+        if category:
+            stmt = stmt.where(ProductRow.category == category)
     if disposition:
         stmt = stmt.where(ScanRow.disposition == disposition)
     if sha256:
         stmt = stmt.where(ScanRow.sha256 == sha256)
-    if product_name:
-        stmt = (stmt.join(ProductRow, ScanRow.product_id == ProductRow.id)
-                    .where(ProductRow.name.ilike(f"%{product_name}%")))
+    if finalized is not None:
+        stmt = stmt.where(ScanRow.finalized.is_(finalized))
+    if has_rule7_flag is not None:
+        stmt = stmt.where(ScanRow.has_rule7_flag.is_(has_rule7_flag))
+    if date_from is not None:
+        stmt = stmt.where(ScanRow.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(ScanRow.created_at <= date_to)
+
+    total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     stmt = stmt.order_by(ScanRow.created_at.desc()).limit(limit).offset(offset)
-    return list(session.scalars(stmt))
+    rows = list(session.scalars(stmt))
+    return rows, total
+
+
+def stats(session: Session) -> dict:
+    """Aggregate KPIs for the officer dashboard."""
+    total = session.scalar(select(func.count()).select_from(ScanRow)) or 0
+    by_disposition = dict(
+        session.execute(select(ScanRow.disposition, func.count()).group_by(ScanRow.disposition)).all()
+    )
+    calibrated_count = session.scalar(
+        select(func.count()).where(ScanRow.calibrated == "calibrated")
+    ) or 0
+    finalized_count = session.scalar(
+        select(func.count()).where(ScanRow.finalized.is_(True))
+    ) or 0
+
+    # Most-flagged declarations: scans the JSON of flagged reports. Acceptable
+    # at prototype scale; a denormalized flag-count table would be the next
+    # step if this becomes a bottleneck at real volume.
+    flag_counts: dict = {}
+    flagged_rows = session.scalars(
+        select(ScanRow).where(ScanRow.disposition == Status.POTENTIAL_NON_COMPLIANCE.value)
+    )
+    for row in flagged_rows:
+        try:
+            report = Report.model_validate_json(row.report_json)
+        except Exception:
+            continue
+        for d in report.declarations:
+            if d.status == Status.POTENTIAL_NON_COMPLIANCE:
+                flag_counts[d.id] = flag_counts.get(d.id, 0) + 1
+    most_flagged = sorted(flag_counts.items(), key=lambda kv: -kv[1])[:10]
+
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    daily_rows = session.execute(
+        select(func.date(ScanRow.created_at), func.count())
+        .where(ScanRow.created_at >= since)
+        .group_by(func.date(ScanRow.created_at))
+        .order_by(func.date(ScanRow.created_at))
+    ).all()
+
+    return {
+        "total": total,
+        "by_disposition": by_disposition,
+        "most_flagged_declarations": [{"id": k, "count": v} for k, v in most_flagged],
+        "scans_per_day": [{"date": str(d), "count": c} for d, c in daily_rows],
+        "pct_calibrated": round(100 * calibrated_count / total, 1) if total else 0.0,
+        "pct_finalized": round(100 * finalized_count / total, 1) if total else 0.0,
+    }
 
 
 # --- audit ---

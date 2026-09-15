@@ -58,7 +58,7 @@ def test_scan_no_auth_and_fetch(client):
     assert got.json()["product"]["name"] == "Masala Chips"
 
     listed = client.get("/scans").json()
-    assert any(s["id"] == scan_id for s in listed)
+    assert any(s["id"] == scan_id for s in listed["results"])
 
     pdf = client.get(f"/scans/{scan_id}/report.pdf")
     # 200 when WeasyPrint's native stack is present, 503 when it isn't.

@@ -5,7 +5,8 @@ Endpoints:
   POST /users                     create a user (admin)
   GET  /users                     list users (admin)
   POST /scan                      upload image (+ optional label text / metadata) -> Report
-  GET  /scans                     search the repository
+  GET  /scans                     search the repository (paged)
+  GET  /stats                     dashboard KPIs
   GET  /scans/{id}                fetch a stored report
   GET  /scans/{id}/report.pdf     download the PDF report
   GET  /scans/{id}/report.docx    download the editable DOCX report
@@ -44,6 +45,7 @@ from ..db.repository import (
     save_report,
     search_scans,
     session_factory,
+    stats as db_stats,
     update_report,
 )
 from ..pipeline import run_scan
@@ -222,16 +224,43 @@ async def scan(
 
 @app.get("/scans")
 def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = None,
+               brand: Optional[str] = None, category: Optional[str] = None,
+               finalized: Optional[bool] = None, has_rule7_flag: Optional[bool] = None,
+               date_from: Optional[str] = None, date_to: Optional[str] = None,
                limit: int = 50, offset: int = 0,
                session=Depends(get_session),
                _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
-    rows = search_scans(session, disposition=disposition, product_name=product_name,
-                        limit=limit, offset=offset)
-    return [
-        {"id": r.id, "ref_no": r.ref_no, "disposition": r.disposition,
-         "calibrated": r.calibrated, "created_at": r.created_at.isoformat()}
-        for r in rows
-    ]
+    try:
+        parsed_from = datetime.fromisoformat(date_from) if date_from else None
+        parsed_to = datetime.fromisoformat(date_to) if date_to else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date_from/date_to must be ISO dates")
+
+    rows, total = search_scans(
+        session, disposition=disposition, product_name=product_name, brand=brand,
+        category=category, finalized=finalized, has_rule7_flag=has_rule7_flag,
+        date_from=parsed_from, date_to=parsed_to, limit=limit, offset=offset,
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "results": [
+            {"id": r.id, "ref_no": r.ref_no, "disposition": r.disposition,
+             "calibrated": r.calibrated, "finalized": r.finalized,
+             "has_rule7_flag": r.has_rule7_flag,
+             "product_name": r.product.name if r.product else None,
+             "brand": r.product.brand if r.product else None,
+             "created_at": r.created_at.isoformat()}
+            for r in rows
+        ],
+    }
+
+
+@app.get("/stats")
+def get_stats(session=Depends(get_session),
+             _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
+    return db_stats(session)
 
 
 @app.get("/scans/{scan_id}")

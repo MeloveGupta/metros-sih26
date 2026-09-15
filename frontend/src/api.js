@@ -40,10 +40,11 @@ export function logout() {
   setAuthToken(null);
 }
 
-export async function scan({ files, productName, commonName, category, panel }) {
+export async function scan({ files, productName, brand, commonName, category, panel }) {
   const form = new FormData();
   for (const f of files) form.append("images", f);
   if (productName) form.append("product_name", productName);
+  if (brand) form.append("brand", brand);
   if (commonName) form.append("common_name", commonName);
   if (category) form.append("category", category);
   if (panel && panel.shape) {
@@ -58,9 +59,24 @@ export async function scan({ files, productName, commonName, category, panel }) 
   return _asJson(res, "Scan failed");
 }
 
-export async function listScans() {
-  const res = await fetch("/scans", { headers: _authHeaders() });
+export async function listScans(filters = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== "" && v != null) params.set(k, v);
+  }
+  const qs = params.toString();
+  const res = await fetch(`/scans${qs ? `?${qs}` : ""}`, { headers: _authHeaders() });
   return _asJson(res, "Could not load scans");
+}
+
+export async function getScan(scanId) {
+  const res = await fetch(`/scans/${scanId}`, { headers: _authHeaders() });
+  return _asJson(res, "Could not load scan");
+}
+
+export async function getStats() {
+  const res = await fetch("/stats", { headers: _authHeaders() });
+  return _asJson(res, "Could not load stats");
 }
 
 async function _downloadFile(url, filename) {
