@@ -48,7 +48,7 @@ from .vision.measure import (
 )
 from .vision.card import card_outline_mm
 from .vision.glyphs import extract_glyph_boxes
-from .vision.ocr import OcrResult, Token
+from .vision.ocr import Token
 from .vision.quality import blur_score, glare_fraction, measure_contrast
 from .vision.scale import CalibrationResult, detect_scale
 

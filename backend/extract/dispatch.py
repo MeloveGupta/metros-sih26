@@ -8,7 +8,7 @@ vision (no OCR needed); otherwise it reads the provided OCR/label text.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 from ..core.errors import ExtractionError

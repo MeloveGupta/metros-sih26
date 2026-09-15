@@ -64,7 +64,7 @@ from ..vision.ocr import (
     tesseract_available,
     tesseract_ocr,
 )
-from .auth import CurrentUser, get_current_user, require_role
+from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
 app = FastAPI(title="Metros API", version="0.1.0")

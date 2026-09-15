@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import os
-from typing import List, Optional
+from typing import List
 
 from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog

@@ -259,8 +259,8 @@ export default function ReportView({ report, onUpdate }) {
       )}
       {fa.items.length ? (
         <div className="fontlist">
-          {fa.items.map((i) => (
-            <div className="fontrow" key={i.declaration_id}>
+          {fa.items.map((i, idx) => (
+            <div className="fontrow" key={`${i.declaration_id}-${idx}`}>
               <div className="fontrow-top">
                 <span className="fontrow-id">{i.declaration_id}</span>
                 <Pill status={i.status} />
