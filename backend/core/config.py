@@ -1,8 +1,9 @@
 """Runtime configuration, sourced from environment variables.
 
-Offline-first: every setting has a working default so the pipeline runs with no
-environment at all. Secrets (JWT, storage creds) must be overridden in
-production via `.env` (see `.env.example`).
+Every setting has a working default so the pipeline runs with no environment
+at all (SQLite, auth-secret placeholder, no AI reader key). Secrets (JWT
+secret, the Anthropic API key) must be overridden in production via `.env`
+(see `.env.example`).
 """
 from __future__ import annotations
 

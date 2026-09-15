@@ -1,19 +1,21 @@
 # frontend
 
-React + Vite dashboard for Metros: officer sign-in, product scan (image +
-optional label text + marker size), and a report view with per-declaration
-statuses, Rule 7 font measurements (mm ± uncertainty), calibration verdict, and
-a DOCX download.
+React + Vite app for Metros: officer sign-in, a tabbed Scan / History /
+Dashboard layout, product scan (photos or an e-commerce listing screenshot/
+pasted text, plus product/panel metadata), a report view with per-declaration
+statuses, Rule 7 font measurements (mm ± uncertainty), an evidence thumbnail
+strip, server-driven officer verification, and PDF/DOCX downloads.
 
 ## Develop
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173, proxies /scan,/auth,/scans to :8000
+npm run dev        # http://localhost:5173, proxies API routes to :8000
 ```
 
 Start the backend first (`uvicorn backend.api.main:app --reload`). The dev
-server proxies API routes to it (see `vite.config.js`).
+server proxies `/auth`, `/scan`, `/scans`, `/stats`, `/users`, `/health` to it
+(see `vite.config.js`).
 
 ## Build
 
@@ -21,15 +23,17 @@ server proxies API routes to it (see `vite.config.js`).
 npm run build      # -> dist/ (served by docker/frontend.Dockerfile)
 ```
 
-## Camera capture
+## Photo capture
 
-The scan form has a live camera (`getUserMedia`, rear camera preferred) plus a
-file/`capture` fallback. It grabs a still frame to a canvas and uploads it as a
-JPEG to `POST /scan` — the backend treats it like any image.
+`ScanForm` uses two plain file inputs, not a live `getUserMedia` camera feed:
+one with `capture="environment"` (opens the rear camera directly on mobile,
+single shot at a time) and one plain multi-select (`multiple`, gallery
+picker). Both upload the original files to `POST /scan` — no in-browser
+re-encoding.
 
-**`getUserMedia` needs a secure context:** it works on `http://localhost` in dev,
-but in production the app MUST be served over **HTTPS** or the camera is blocked.
-The file-upload fallback (which on phones offers "Take Photo") works either way.
+## Auth
 
-The token is kept in `localStorage`; every read/write is guarded so a private
-window or blocked storage degrades gracefully.
+The JWT from `/auth/token` is kept in a React module variable (`api.js`), not
+`localStorage` or `sessionStorage` — a page reload requires signing in again.
+Every authenticated request (including PDF/DOCX/evidence-image downloads,
+which need the `Authorization` header) goes through `api.js`'s fetch helpers.

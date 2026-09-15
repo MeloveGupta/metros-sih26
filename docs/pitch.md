@@ -16,7 +16,7 @@ Grounded in the actual Legal Metrology (Packaged Commodities) Rules, 2011
 > to the **millimetre (with a stated uncertainty)**, checks it against the Legal
 > Metrology (Packaged Commodities) Rules, 2011, and produces a **clause-cited,
 > evidence-backed record of *potential* non-compliance — flagged for officer
-> verification, fully offline.**
+> verification.**
 
 > **Legal guardrail (say this, believe this):** the system is *decision-support*.
 > It flags **potential** non-compliance with a confidence and an evidence crop;
@@ -29,9 +29,9 @@ Grounded in the actual Legal Metrology (Packaged Commodities) Rules, 2011
 
 ## 1. USP (Unique Selling Proposition)
 
-**"We measure Legal Metrology declarations to the millimetre, deterministically,
-offline — turning a photo into traceable, clause-cited evidence an officer can
-verify and act on."**
+**"We measure Legal Metrology declarations to the millimetre, deterministically
+— turning a photo into traceable, clause-cited evidence an officer can verify
+and act on."**
 
 Four pillars — each is something a generic "upload → GPT says compliant" demo
 **cannot** claim:
@@ -39,9 +39,9 @@ Four pillars — each is something a generic "upload → GPT says compliant" dem
 | Pillar | What it means | Why judges (LM officers) care |
 |--------|---------------|-------------------------------|
 | **Metric, not guessed** | Letter height in real mm via ArUco scale — pure geometry | It's *measurement*, defensible in an inquiry |
-| **Deterministic verdict** | Same image → same verdict, every time, citing the exact clause | Reproducible ⇒ admissible as evidence |
+| **Deterministic verdict** | Same image → same verdict, every time, citing the exact clause | Reproducible; the rule engine never guesses, only the AI reader (which never decides) touches an LLM |
 | **Rule-true** | Area-based Table-I (GSR 629(E), 2018), Rule 6, Rule 7(3) | Proves we read the gazette, not a blog summary |
-| **Offline / on-prem** | No cloud, no data leaves the device | A govt tool can't ship product photos to a foreign API |
+| **Deterministic fallback** | AI reader (Claude) by default; automatic Tesseract OCR fallback with no key or on API failure | A scan never silently returns nothing, key or no key |
 
 ## 2. Hero feature (the one thing you demo live)
 
@@ -74,11 +74,13 @@ Metrology officer trusts.
 
 ## 4. The solution (slide: Proposed Solution)
 
-An offline-first web/mobile app:
+An online web app:
 
-1. **Capture** — photograph the label with an ArUco scale card in frame.
+1. **Capture** — photograph the label with an ArUco scale card in frame (or,
+   for an e-commerce listing, upload a screenshot / paste the listing text).
 2. **Measure scale** — detect the marker → `mm_per_pixel` (deterministic).
-3. **Read** — OCR extracts declaration text + per-character pixel boxes.
+3. **Read** — the AI reader (Claude) extracts declaration text directly from
+   the photos; Tesseract OCR + regex is the automatic fallback.
 4. **Measure** — panel area (cm²) *and* glyph height (mm) from the scale.
 5. **Validate** — deterministic rule engine checks Rule 6 presence/format and
    Rule 7 height, citing each clause.
@@ -181,11 +183,10 @@ transformation metadata, follow DPDP Act 2023 for any personal/location data.
 
 **Pipeline**
 ```
-capture (product + ArUco marker)
+capture (product + ArUco marker, or an e-commerce listing screenshot/text)
   → [OpenCV aruco]   marker → mm_per_pixel
-  → [PaddleOCR]      text + per-char pixel boxes
-  → [CV]             panel area cm² + glyph mm  (Rule 7)
-  → [regex/NER]      text → fields (MRP, net qty, dates, care)
+  → [Claude / Tesseract]  AI reader by default, OCR+regex fallback on no key/failure
+  → [CV]             panel area cm² + glyph mm  (Rule 7, always deterministic)
   → [rule engine]    verdict per clause + evidence crop
   → [reports]        PDF + editable DOCX
   → API + DB + dashboard
@@ -197,23 +198,23 @@ capture (product + ArUco marker)
 |-------|--------|
 | Language | Python (one language across CV + rules + API) |
 | Scale / mm | OpenCV `cv2.aruco` |
-| OCR + char boxes | PaddleOCR (offline, free) |
-| Field parsing | Claude (Anthropic API) default; regex fallback |
+| Field parsing (primary) | Claude (Anthropic API) — reads photos directly |
+| Field parsing (fallback) | Tesseract OCR + regex — automatic, no key needed |
 | Rule engine | Python + YAML catalog (`rules/lmpc-2011.yaml`) |
 | API | FastAPI |
-| DB / storage | PostgreSQL + MinIO |
-| Frontend | React + Vite (PWA capture) |
+| DB / storage | PostgreSQL + local-disk evidence storage |
+| Frontend | React + Vite |
 | Reports | WeasyPrint (PDF) + python-docx (editable) |
 | Auth | JWT + RBAC |
-| Deploy | Docker Compose (offline/on-prem) |
+| Deploy | Docker Compose |
 
 *Why Python, not Rust/Go: the OCR + OpenCV ecosystem is Python-first; the vision
 core stays Python, and a Rust/Go API gateway is a clean v2 wrapper if it scales.*
 
 ## 8. Feasibility & viability (slide: Feasibility)
 
-- **Feasible now:** ArUco (OpenCV built-in), PaddleOCR, YAML rules — all mature,
-  all offline. No model training required to demo.
+- **Feasible now:** ArUco (OpenCV built-in), Tesseract OCR, YAML rules — all
+  mature, no model training required to demo.
 - **No dataset dependency:** shoot our own label images in any supermarket; full
   control over test data (a scoring advantage — most PS depend on a given set).
 - **Risks & mitigations:**
@@ -238,7 +239,9 @@ core stays Python, and a Rust/Go API gateway is a clean v2 wrapper if it scales.
 - **Industry:** manufacturers can self-check pre-market (pre-compliance).
 - **Government:** auditable inspection history, dashboards, trend analytics by
   brand/region/violation type.
-- **Scalable to e-commerce:** batch-scan online product listing images.
+- **Works for e-commerce too:** a listing screenshot or pasted text scans the
+  same way, minus the physical-pack-only checks (Rule 7/8) and the mfg-date
+  requirement (Rule 6(10)).
 
 ## 10. Why we win (judge lens)
 
@@ -247,7 +250,8 @@ the Rules from one that wrapped an OCR API. We show:
 - a **millimetre number** they trust,
 - the **exact clause** (Rule 7 Table-I, GSR 629(E)) behind it,
 - a report they could **actually file**,
-- running **offline**, respecting data sovereignty.
+- a deterministic fallback (Tesseract OCR) that keeps working with no API key
+  and no internet, so the tool never depends on a foreign service to function.
 
 **Positioning line to repeat:** *measurement-grade decision-support, not
 AI-guessed verdicts.* Never say "AI figures out the font size," and never say
@@ -282,7 +286,8 @@ officer verification."**
   stores; encrypt, minimise, role-gate.
 - ArUco / AprilTag markers — OpenCV `cv2.aruco` (camera-independent metric scale
   recovery) + homography for perspective correction.
-- PaddleOCR — open-source OCR with character-level bounding boxes.
+- Tesseract OCR — the deterministic fallback reader when the AI reader is
+  unavailable.
 
 ---
 
@@ -307,4 +312,4 @@ officer verification."**
 2. Overlay: each declaration boxed, letter height in **mm ± uncertainty** labeled.
 3. One field below the Rule 7 threshold → ⚠️ flagged, with clause + measured-vs-required.
 4. Tap → PDF report generates, evidence crop + confidence + "officer verification required" embedded.
-5. Close: *"A calibrated, clause-cited flag of potential non-compliance an officer can verify and act on — offline."*
+5. Close: *"A calibrated, clause-cited flag of potential non-compliance an officer can verify and act on."*

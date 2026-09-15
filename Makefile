@@ -6,7 +6,7 @@ BIN := $(VENV)/bin
 
 help:
 	@echo "make install        create venv and install core backend deps"
-	@echo "make install-ocr    add PaddleOCR (optional; Python 3.12 recommended)"
+	@echo "make install-ocr    add the Tesseract OCR fallback (optional; needs the tesseract binary on PATH)"
 	@echo "make install-llm    add the Claude extractor (optional; set ANTHROPIC_API_KEY)"
 	@echo "make test           run the backend test suite"
 	@echo "make seed           create default users in the database"

@@ -1,9 +1,10 @@
 # Architecture — SIH26034 Legal Metrology Compliance Scanner
 
-> Python offline-first computer-vision pipeline. Scans a packaged-commodity
-> label, measures declaration font height in **real millimetres**, validates
-> every mandatory declaration against the Legal Metrology (Packaged
-> Commodities) Rules, 2011, and emits an enforcement-ready compliance report.
+> Python computer-vision pipeline behind an online web app. Scans a
+> packaged-commodity label, measures declaration font height in **real
+> millimetres**, validates every mandatory declaration against the Legal
+> Metrology (Packaged Commodities) Rules, 2011, and emits an enforcement-ready
+> compliance report.
 
 ---
 
@@ -24,9 +25,12 @@
 4. **Rules are versioned data.** Each rule stores clause + source URL + gazette +
    effective-from + applicability, so an officer amends it without a redeploy and
    reports cite only officially verified text.
-5. **Offline-first.** The full pipeline runs on-device with no internet. Any
-   LLM API is an *optional* accelerator, never a dependency — and never for
-   personal/location data (DPDP Act, 2023).
+5. **Online, with a deterministic fallback.** The AI reader (Claude, via the
+   Anthropic API) is the default way declaration text is read from a photo —
+   it needs internet and an API key. When no key is set or a call fails, the
+   pipeline automatically falls back to on-device Tesseract OCR + regex, so a
+   scan never silently returns nothing. Either way, only label photos are
+   sent to the AI reader — never personal/location data (DPDP Act, 2023).
 6. **The moat is geometry, not AI.** Font height in mm comes from marker scale +
    pixel measurement — physics, deterministic. No model guesses a size.
 7. **Flat over nested.** Many shallow top-level modules; nesting kept ≤ 2 deep.
@@ -34,28 +38,30 @@
 ## 2. Pipeline
 
 ```
- capture  (product label + ArUco marker in frame)
+ capture  (product label + ArUco marker in frame; or an e-commerce listing
+           screenshot/pasted text, which skips calibration + Rule 7/8 entirely)
     │
     ▼
 [vision.scale]     detect ArUco  →  mm_per_pixel          (deterministic scale)
     │
     ▼
-[vision.ocr]       PaddleOCR     →  text + per-char pixel boxes   (offline)
+[extract]          Claude reads the images directly (default, needs an API
+                    key) → fields (MRP, net qty, mfg date, care info); on no
+                    key / a failed call, falls back to Tesseract OCR + regex
     │
     ▼
 [vision.measure]   glyph_px × mm_per_pixel  →  glyph_mm   →  Rule 7 font check
-    │
-    ▼
-[extract]          text/images  →  fields (MRP, net qty, mfg date, care info)
-    │                        Claude (default) or regex fallback
+    │                        (always deterministic geometry, never the AI reader)
     ▼
 [rules.engine]     fields + measurements  →  verdict per clause + evidence crop
     │
     ▼
-[reports]          PDF (WeasyPrint) + editable DOCX (python-docx)
+[reports]          PDF (WeasyPrint) + editable DOCX (python-docx), evidence
+                    images/crops embedded inline
     │
     ▼
-[api] + [db] + [frontend]   repository, search, dashboard, RBAC
+[api] + [db] + [frontend]   repository, search, dashboard, RBAC, officer
+                             verification (review-items + finalize)
 ```
 
 ## 3. Why each choice
@@ -63,16 +69,16 @@
 | Concern | Choice | Reason |
 |---------|--------|--------|
 | Scale recovery | OpenCV `cv2.aruco` | known-size marker → exact mm, deterministic |
-| OCR + char boxes | PaddleOCR | offline, free, per-character boxes |
-| Field parsing | Claude (Anthropic API) default; regex fallback | AI reader by default, deterministic fallback when unavailable |
+| Field parsing (primary) | Claude (Anthropic API) | reads label photos directly, no OCR pass needed |
+| Field parsing (fallback) | Tesseract OCR + regex | automatic when no API key or the API call fails |
 | Rule engine | plain Python + YAML catalog | deterministic, clause-cited, no-redeploy edits |
 | API | FastAPI | async, Python (one language with CV), free OpenAPI |
-| DB | PostgreSQL | records, history, search |
-| Media | MinIO (S3 API) / local disk | evidence images |
-| Frontend | React + Vite (PWA capture) | dashboard + in-field camera upload |
+| DB | PostgreSQL (SQLite for local dev) | records, history, search |
+| Media | local disk (`data/uploads`, a Docker volume) | evidence images + crops |
+| Frontend | React + Vite | scan form, history/search, officer dashboard |
 | Reports | WeasyPrint + python-docx | PDF *and* editable, both required by the PS |
 | Auth | JWT + RBAC | officer / admin / auditor roles |
-| Deploy | Docker Compose | one-command on-prem story |
+| Deploy | Docker Compose | one-command deployment |
 
 **Why not pure-LLM:** a monocular photo has no absolute scale — the same glyph
 is 2 mm or 20 mm depending on camera distance, and both render identical
@@ -108,7 +114,7 @@ any identity document.
   on a cluttered shelf. The ArUco card gives the same "lay it next to the
   product" convenience with **no PII** and **robust auto-detection**.
 - **Distribution:** ship a free printable A4 sheet (`scripts/gen_calibration_card.py`).
-  An office prints once; officers carry the cut-out card. Zero cost, offline.
+  An office prints once; officers carry the cut-out card. Zero ongoing cost.
 - **Fallbacks (manual/low-confidence mode):** any blank ID-1 card by its known
   outline, a ₹5 coin (⌀ 23 mm), or a ruler. **Never** barcode width — EAN-13
   magnification varies. No reference in frame ⇒ no mm verdict.
@@ -120,25 +126,30 @@ any identity document.
 - **rules/** — YAML rule catalog + deterministic engine; each verdict cites a clause.
 - **reports/** — PDF + DOCX generation with embedded evidence crops.
 - **api/** — FastAPI routes, auth, RBAC.
-- **db/** — models, migrations, repository + search.
+- **db/** — models, repository (search, stats, audit log). No migration
+  framework; `create_all()` only (see `backend/db/README.md`).
 - **schemas/** — Pydantic request/response + internal DTOs.
-- **frontend/** — React dashboard, upload, in-field capture (PWA).
+- **frontend/** — scan form, history/search, officer dashboard, report view.
 
 ## 5. Data model (core entities)
 
+The canonical `Report` (declarations, font analysis, placement, readability,
+evidence, officer actions — see `docs/report-spec.md`) is stored as one JSON
+blob per scan, the single source of truth for the DB, API, and PDF/DOCX
+renderers. A few fields are denormalized onto `ScanRow` for cheap search/stats
+filtering, rather than a separate Field/Verdict table per finding:
+
 ```
-Product   (id, name, brand, category, source, created_by, created_at)
-Scan      (id, product_id, image_ref, marker_mm, mm_per_pixel, status, ts)
-Field     (id, scan_id, kind, raw_text, value, bbox, confidence)
-Verdict   (id, scan_id, clause, result, measured, threshold, evidence_ref)
-Report    (id, scan_id, pdf_ref, docx_ref, generated_at)
-User      (id, name, email, role, pw_hash)
-AuditLog  (id, user_id, action, target, reason, ts)
+ProductRow  (id, name, brand, category, source, created_at)
+ScanRow     (id, product_id, ref_no, disposition, calibrated, sha256,
+             finalized, has_rule7_flag, report_json, created_by, created_at)
+User        (id, name, email, role, pw_hash)
+AuditLog    (id, user_id, action, target, reason, created_at)
 ```
 
 ## 6. Build order (demo-first)
 
-1. **vision/** — ArUco + PaddleOCR + glyph→mm on a real supermarket photo. *(the moat — ship first)*
+1. **vision/** — ArUco + OCR fallback + glyph→mm on a real supermarket photo. *(the moat — ship first)*
 2. **rules/** — YAML catalog + engine for MRP, net quantity, manufacturer, consumer-care, Rule 7 font.
 3. **api/** — upload → verdict JSON.
 4. **reports/** — PDF + DOCX with evidence crops.
@@ -147,6 +158,10 @@ AuditLog  (id, user_id, action, target, reason, ts)
 
 ## 7. Deployment
 
-`docker-compose up` brings up: API (FastAPI + Uvicorn), PostgreSQL, MinIO,
-frontend (static build). Runs fully offline; the LLM fast-path activates only
-when an API key is present in the environment.
+`docker-compose up` brings up: API (FastAPI + Uvicorn), PostgreSQL, frontend
+(static build via nginx). Evidence images/crops live on a Docker volume
+(`data/uploads`), not an object-storage service. The API needs outbound
+internet reachability to `api.anthropic.com` for the AI reader; without it (or
+without `ANTHROPIC_API_KEY` set), every scan automatically uses the Tesseract
+OCR fallback instead. See [`docs/deployment.md`](deployment.md) for the full
+env-var table and setup steps.
