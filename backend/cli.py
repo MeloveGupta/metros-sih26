@@ -86,6 +86,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         molded=args.molded,
         image_file=Path(args.image).name,
         extract_backend="auto" if args.llm else "regex",
+        label_text_provided=label_text is not None,
     )
 
     _print_summary(report)
@@ -117,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--molded", action="store_true",
                       help="declarations are blown/molded (higher thresholds)")
     scan.add_argument("--llm", action="store_true",
-                      help="use the Claude extraction fast-path (needs `ant auth login`)")
+                      help="use the Claude extraction fast-path (needs ANTHROPIC_API_KEY)")
     scan.add_argument("--product", help="product name")
     scan.add_argument("--out-dir", help="write JSON/HTML/PDF report here")
     scan.set_defaults(func=_cmd_scan)

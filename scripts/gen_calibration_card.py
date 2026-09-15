@@ -27,9 +27,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-# ID-1 / CR80 card, ISO/IEC 7810.
-CARD_W_MM = 85.60
-CARD_H_MM = 53.98
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from backend.vision.card import CARD_H_MM, CARD_W_MM, QUIET_ZONE_MM  # noqa: E402
 
 # ISO 216 A4.
 A4_W_MM = 210.0
@@ -95,7 +95,7 @@ def build_card(dpi: int, marker_mm: float, dict_name: str, marker_id: int) -> np
         cv2.line(page, (x, y - tick), (x, y + tick), grey, 1)
 
     # Marker: left-justified inside the card with a quiet zone.
-    quiet = mm_to_px(6, dpi)
+    quiet = mm_to_px(QUIET_ZONE_MM, dpi)
     mx0 = cx0 + quiet
     my0 = cy0 + (card_h - marker_px) // 2
     marker = render_marker(resolve_dictionary(dict_name), marker_id, marker_px)

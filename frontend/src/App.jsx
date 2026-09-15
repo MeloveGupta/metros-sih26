@@ -45,7 +45,8 @@ function ScanForm({ onReport }) {
         <p className="lede">
           Add the front and back of the pack, plus any close-ups of the label. More
           photos means the reader finds more declarations. Include the printed Metros
-          card in a shot to also measure letter height (Rule 7).
+          card in a shot to also measure letter height (Rule 7) — lay the card flat
+          on the same face as the label, touching the text you want measured.
         </p>
       </div>
 

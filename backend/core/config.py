@@ -44,9 +44,17 @@ class Settings:
 
     # Calibration
     marker_size_mm: float = field(default_factory=lambda: _env_float("MARKER_SIZE_MM", 40.0))
-    # Reject calibration if the homography reprojection residual exceeds this (px).
-    max_homography_residual_px: float = field(
-        default_factory=lambda: _env_float("MAX_HOMOGRAPHY_RESIDUAL_PX", 12.0)
+    # Reject calibration if independent re-detections of the marker disagree on
+    # its corners by more than this (px). A homography fit to exactly 4 points
+    # always reprojects with ~zero residual, so that is not used as a gate.
+    max_corner_jitter_px: float = field(
+        default_factory=lambda: _env_float("MAX_CORNER_JITTER_PX", 2.0)
+    )
+    # Beyond this many marker-side-lengths from the marker centre, a
+    # measurement is not_assessable (homography error grows with extrapolation
+    # distance and can no longer be trusted).
+    max_extrapolation_sides: float = field(
+        default_factory=lambda: _env_float("MAX_EXTRAPOLATION_SIDES", 4.0)
     )
 
     # Auth
@@ -62,9 +70,6 @@ class Settings:
             "DATABASE_URL", f"sqlite:///{REPO_ROOT / 'data' / 'metroscan.db'}"
         )
     )
-
-    # Optional LLM fast-path; empty => fully offline extraction.
-    gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY", ""))
 
 
 def get_settings() -> Settings:

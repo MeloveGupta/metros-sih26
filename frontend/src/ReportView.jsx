@@ -159,6 +159,16 @@ export default function ReportView({ report, onUpdate }) {
         Not a final legal finding.
       </p>
 
+      {report.extraction && (
+        <p className={`readerline${report.extraction.backend_used !== "llm" ? " readerline-fallback" : ""}`}>
+          Reader: <b>{report.extraction.backend_used === "llm" ? "AI reader"
+            : report.extraction.backend_used === "label_text" ? "pasted label text"
+            : "OCR fallback"}</b>
+          {report.extraction.llm_error && <span className="muted"> — AI reader failed: {report.extraction.llm_error}</span>}
+          {report.extraction.warnings.map((w) => <span className="muted" key={w}> · {w}</span>)}
+        </p>
+      )}
+
       <div className="kpis">
         {kpis.map(([label, n, cls]) => (
           <div className="kpi" key={label}>
@@ -176,6 +186,7 @@ export default function ReportView({ report, onUpdate }) {
         <span className={`dot ${cal.verdict === "calibrated" ? "on" : "off"}`} />
         <b>{cal.verdict.replace(/_/g, " ")}</b>
         {cal.mm_per_pixel && <span className="mono muted">{cal.mm_per_pixel.toFixed(5)} mm/px</span>}
+        {cal.corner_jitter_px != null && <span className="mono muted">corner jitter {cal.corner_jitter_px.toFixed(2)}px</span>}
         {cal.reason && <span className="muted">{cal.reason}</span>}
       </div>
 

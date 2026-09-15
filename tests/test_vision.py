@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from backend.vision.scale import detect_scale, px_to_mm
+from backend.vision.scale import MIN_CORNER_JITTER_PX, detect_scale, px_to_mm
 from backend.vision.measure import (
     glyph_height_mm,
     glyph_width_ratio,
@@ -20,7 +20,7 @@ def test_detect_scale_frontal_recovers_mm_per_pixel(scene_factory):
     assert res.marker_id == 0
     # Frontal: mm_per_pixel should match ground truth within 1%.
     assert res.mm_per_pixel == pytest.approx(meta["mm_per_pixel"], rel=0.01)
-    assert res.residual_px < 2.0
+    assert res.corner_jitter_px < 2.0
     assert 0.0 < res.detection_confidence <= 1.0
 
 
@@ -45,7 +45,7 @@ def test_glyph_height_mm_frontal(scene_factory):
     assert res.calibrated
     mean_side_px = meta["side_px"]
     m = glyph_height_mm(res.H_img_to_mm, meta["glyph_bbox_px"], res.marker_mm,
-                        mean_side_px, res.residual_px)
+                        mean_side_px, res.corner_jitter_px)
     assert m.value == pytest.approx(meta["glyph_height_mm_true"], rel=0.02)
     assert m.uncertainty > 0  # every mm value carries a band
 
@@ -63,7 +63,7 @@ def test_panel_area_cm2(scene_factory):
     res = detect_scale(img, marker_mm=40.0)
     poly = [(600, 150), (1100, 150), (1100, 450), (600, 450)]
     area = panel_area_cm2(res.H_img_to_mm, poly, res.marker_mm,
-                          meta["side_px"], res.residual_px)
+                          meta["side_px"], res.corner_jitter_px)
     assert area.unit == "cm^2"
     assert area.value == pytest.approx(15.0, rel=0.02)
 
@@ -89,6 +89,39 @@ def test_detect_scale_perspective_recovers_true_mm(scene_factory):
     bbox_w = (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
 
     m = glyph_height_mm(res.H_img_to_mm, bbox_w, res.marker_mm,
-                        meta["side_px"], res.residual_px)
-    # Perspective-correct height should still be ~9 mm (looser tol under warp).
+                        meta["side_px"], res.corner_jitter_px)
+    # Perspective-correct height should still be ~9 mm (looser tol under warp),
+    # and within the measurement's own reported uncertainty band.
     assert m.value == pytest.approx(meta["glyph_height_mm_true"], rel=0.08)
+    true_h = meta["glyph_height_mm_true"]
+    assert (m.value - m.uncertainty) <= true_h <= (m.value + m.uncertainty)
+
+
+def test_corner_jitter_gate_rejects_unstable_calibration(scene_factory):
+    """A homography fit to 4 points always reprojects at ~0px, so the old
+    residual gate never rejected anything. The corner-jitter floor
+    (`MIN_CORNER_JITTER_PX`) means any calibration can be forced to fail an
+    unrealistically strict limit -- proving the gate is load-bearing again."""
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    res = detect_scale(img, marker_mm=40.0, max_corner_jitter_px=0.1)
+    assert not res.calibrated
+    assert res.reason and "jitter" in res.reason
+
+
+def test_corner_jitter_floor_and_blur_increase_instability(scene_factory):
+    """A heavily blurred/shrunk marker should show more corner instability
+    than a clean, sharp one (or fail to calibrate outright)."""
+    clean, _ = scene_factory(marker_mm=40.0, side_px=400)
+    clean_res = detect_scale(clean, marker_mm=40.0)
+    assert clean_res.calibrated
+    assert clean_res.corner_jitter_px >= MIN_CORNER_JITTER_PX
+
+    small, _ = scene_factory(marker_mm=40.0, side_px=60)
+    blurred = cv2.GaussianBlur(small, (9, 9), sigmaX=3.0)
+    blurred_res = detect_scale(blurred, marker_mm=40.0)
+    # Either it fails to calibrate at all, or it calibrates with visibly worse
+    # (or at least not-better) corner stability than the clean frontal shot.
+    if blurred_res.calibrated:
+        assert blurred_res.corner_jitter_px >= clean_res.corner_jitter_px
+    else:
+        assert blurred_res.reason

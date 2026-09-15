@@ -190,6 +190,12 @@ button { font: inherit; }
   margin: 16px 0 20px; padding: 12px 14px; font-size: var(--t-label); font-weight: 600; color: var(--ink);
   background: var(--g1); border: var(--bd) solid var(--ink);
 }
+.readerline {
+  margin: 0 0 16px; font-size: var(--t-label); font-weight: 600; color: var(--ink);
+}
+.readerline-fallback {
+  padding: 8px 10px; background: var(--g2); border: var(--bd) solid var(--ink);
+}
 
 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); border: var(--bd) solid var(--ink); }
 .kpi { padding: 14px; border-right: var(--bd) solid var(--ink); border-bottom: var(--bd) solid var(--ink); }

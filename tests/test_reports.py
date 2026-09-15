@@ -36,7 +36,7 @@ def sample_report() -> Report:
             file="chips.jpg", sha256="deadbeef", width=1200, height=1600)),
         calibration=Calibration(
             aruco_dict="DICT_4X4_50", marker_id=0, marker_mm=40.0,
-            mm_per_pixel=0.1, homography_residual_px=0.8, detection_confidence=0.95,
+            mm_per_pixel=0.1, corner_jitter_px=0.8, detection_confidence=0.95,
             verdict=CalibrationVerdict.CALIBRATED),
         summary=Summary(checked=2, compliant=1, potential_non_compliance=1,
                         overall_confidence=0.5,

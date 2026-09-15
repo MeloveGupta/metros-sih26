@@ -86,9 +86,16 @@ def _font_status(
     width_ratio: Optional[float],
     min_width_ratio: float,
     calibrated: bool,
+    max_extrapolation_sides: float = 4.0,
 ) -> Tuple[Status, Optional[str]]:
     if not calibrated or height is None:
         return Status.NOT_ASSESSABLE, "no valid calibration; millimetre height not measurable"
+
+    if height.extrapolation_d > max_extrapolation_sides:
+        return (
+            Status.NOT_ASSESSABLE,
+            "text too far from calibration card for a reliable measurement",
+        )
 
     lo, hi = height.value - height.uncertainty, height.value + height.uncertainty
     if hi < threshold_mm:
@@ -119,6 +126,7 @@ def evaluate(
     fields: List[FieldExtraction],
     font: FontInputs,
     calibrated: bool,
+    max_extrapolation_sides: float = 4.0,
 ) -> Tuple[List[DeclarationFinding], FontAnalysis, Summary]:
     """Run the full deterministic evaluation."""
     by_id = {f.id: f for f in fields}
@@ -182,7 +190,8 @@ def evaluate(
         # Never accept below the absolute floor even if a band is lower.
         threshold = max(threshold, abs_floor_molded if g.molded else abs_floor)
         status, reason = _font_status(
-            g.height, threshold, g.width_ratio, min_width_ratio, calibrated
+            g.height, threshold, g.width_ratio, min_width_ratio, calibrated,
+            max_extrapolation_sides,
         )
         fa.items.append(
             FontItem(

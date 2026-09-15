@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ class Status(str, Enum):
     NOT_DETECTED = "not_detected"
     NOT_ASSESSABLE = "not_assessable"
     NOT_APPLICABLE = "not_applicable"
+    NEEDS_OFFICER_REVIEW = "needs_officer_review"
     OFFICER_CONFIRMED = "officer_confirmed"
     OFFICER_OVERRIDDEN = "officer_overridden"
 
@@ -111,7 +112,7 @@ class Calibration(BaseModel):
     marker_mm: Optional[float] = None
     detection_confidence: Optional[float] = None
     mm_per_pixel: Optional[float] = None
-    homography_residual_px: Optional[float] = None
+    corner_jitter_px: Optional[float] = None
     verdict: CalibrationVerdict = CalibrationVerdict.REJECTED
     reason: Optional[str] = None
 
@@ -186,14 +187,25 @@ class RuleCatalogInfo(BaseModel):
     hash: Optional[str] = None
 
 
+class Extraction(BaseModel):
+    """How the label text was actually read for this report."""
+
+    backend_used: Literal["llm", "ocr_regex", "label_text"] = "ocr_regex"
+    llm_error: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
 LIMITATIONS_TEXT = (
     "Decision-support scope: this report flags POTENTIAL non-compliance for "
     "officer verification and does not make a final legal finding. "
     "'Not detected in the submitted image' is not the same as 'legally absent'. "
     "Millimetre measurement is reliable only for guided, planar captures with a "
     "valid calibration marker; it is degraded for curved, shiny, crumpled, "
-    "transparent or steeply angled packages. Authorised physical measurement "
-    "remains necessary for any enforcement action."
+    "transparent or steeply angled packages. It also assumes the measured text "
+    "lies in the same plane as the calibration card; text noticeably closer to "
+    "or further from the camera than the card (out-of-plane offset) is not "
+    "detected by a single marker and can bias the result. Authorised physical "
+    "measurement remains necessary for any enforcement action."
 )
 
 
@@ -210,6 +222,7 @@ class Report(BaseModel):
     product: Product = Field(default_factory=Product)
     evidence: Evidence
     calibration: Calibration = Field(default_factory=Calibration)
+    extraction: Extraction = Field(default_factory=Extraction)
     summary: Summary = Field(default_factory=Summary)
     declarations: List[DeclarationFinding] = Field(default_factory=list)
     font_analysis: FontAnalysis = Field(default_factory=FontAnalysis)

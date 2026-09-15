@@ -24,19 +24,33 @@ class MmMeasurement:
     value: float
     uncertainty: float
     unit: str = "mm"
+    # Distance from the marker centre to the measured point, in marker-side
+    # units. Homography error grows with extrapolation distance; callers use
+    # this to gate measurements that are too far from the card to trust.
+    extrapolation_d: float = 0.0
 
 
-def _relative_uncertainty(marker_mm: float, mean_side_px: float, residual_px: float,
-                          span_px: float) -> float:
+def extrapolation_distance(
+    H_img_to_mm: np.ndarray, marker_mm: float, point_px: Tuple[float, float],
+) -> float:
+    """Distance from the marker centre to `point_px`, in marker-side units."""
+    point_mm = px_to_mm(H_img_to_mm, np.array([point_px], dtype=np.float64))[0]
+    center_mm = np.array([marker_mm / 2.0, marker_mm / 2.0])
+    return float(np.linalg.norm(point_mm - center_mm) / marker_mm)
+
+
+def _relative_uncertainty(marker_mm: float, mean_side_px: float, corner_jitter_px: float,
+                          span_px: float, extrapolation_d: float = 0.0) -> float:
     """Combine independent relative error sources in quadrature.
 
     - marker print/cut tolerance vs. its size,
-    - homography residual vs. marker side,
+    - corner detection jitter vs. marker side, amplified by extrapolation
+      distance (homography error grows the further a point is from the card),
     - edge localization vs. the span being measured.
     """
     terms = [
         MARKER_PRINT_TOLERANCE_MM / marker_mm,
-        residual_px / mean_side_px if mean_side_px else 0.0,
+        (corner_jitter_px / mean_side_px) * (1 + extrapolation_d) if mean_side_px else 0.0,
         EDGE_LOCALIZATION_PX / span_px if span_px else 0.0,
     ]
     return float(np.sqrt(sum(t * t for t in terms)))
@@ -47,7 +61,7 @@ def glyph_height_mm(
     bbox_px: Tuple[float, float, float, float],
     marker_mm: float,
     mean_side_px: float,
-    residual_px: float,
+    corner_jitter_px: float,
 ) -> MmMeasurement:
     """Measure the height (mm) of a glyph/text bounding box (x, y, w, h in px)."""
     x, y, w, h = bbox_px
@@ -59,8 +73,11 @@ def glyph_height_mm(
     p = px_to_mm(H_img_to_mm, np.array([top_mid, bot_mid]))
     height = float(np.linalg.norm(p[0] - p[1]))
 
-    rel = _relative_uncertainty(marker_mm, mean_side_px, residual_px, span_px=h)
-    return MmMeasurement(round(height, 3), round(height * rel, 3))
+    center_px = (x + w / 2.0, y + h / 2.0)
+    d = extrapolation_distance(H_img_to_mm, marker_mm, center_px)
+    rel = _relative_uncertainty(marker_mm, mean_side_px, corner_jitter_px, span_px=h,
+                                extrapolation_d=d)
+    return MmMeasurement(round(height, 3), round(height * rel, 3), extrapolation_d=round(d, 3))
 
 
 def glyph_width_ratio(
@@ -94,7 +111,7 @@ def panel_area_cm2(
     polygon_px: Sequence[Tuple[float, float]],
     marker_mm: float,
     mean_side_px: float,
-    residual_px: float,
+    corner_jitter_px: float,
 ) -> MmMeasurement:
     """Area (cm^2) of the principal display panel from its pixel polygon."""
     poly = np.asarray(polygon_px, dtype=np.float64)
@@ -109,5 +126,9 @@ def panel_area_cm2(
         np.sum(np.linalg.norm(np.diff(np.vstack([poly, poly[0]]), axis=0), axis=1))
     )
     typical_span_px = perimeter_px / max(len(poly), 1)
-    rel = 2.0 * _relative_uncertainty(marker_mm, mean_side_px, residual_px, typical_span_px)
-    return MmMeasurement(round(area_cm2, 3), round(area_cm2 * rel, 3), unit="cm^2")
+    centroid_px = (float(np.mean(poly[:, 0])), float(np.mean(poly[:, 1])))
+    d = extrapolation_distance(H_img_to_mm, marker_mm, centroid_px)
+    rel = 2.0 * _relative_uncertainty(marker_mm, mean_side_px, corner_jitter_px,
+                                      typical_span_px, extrapolation_d=d)
+    return MmMeasurement(round(area_cm2, 3), round(area_cm2 * rel, 3), unit="cm^2",
+                         extrapolation_d=round(d, 3))

@@ -62,7 +62,8 @@ def get_session():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": app.version}
+    from ..extract.llm import llm_available
+    return {"status": "ok", "version": app.version, "llm_available": llm_available()}
 
 
 def _decode_image(data: bytes) -> np.ndarray:
@@ -126,7 +127,8 @@ async def scan(
     report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                       product=product, inspection=inspection,
                       image_file=images[0].filename or "upload.jpg",
-                      extract_backend="regex" if llm is False else "auto")
+                      extract_backend="regex" if llm is False else "auto",
+                      label_text_provided=bool(label_text))
 
     save_report(session, report, created_by=user["sub"])
     append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)

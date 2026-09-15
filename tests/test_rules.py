@@ -85,6 +85,28 @@ def test_uncalibrated_font_is_not_assessable(catalog):
     assert fa.items[0].status == Status.NOT_ASSESSABLE
 
 
+def test_font_far_from_marker_is_not_assessable(catalog):
+    # Text 6 marker-side-lengths from the marker centre (beyond the default
+    # 4-side extrapolation limit) can't be trusted, even if it looks compliant.
+    font = FontInputs(
+        panel_area_cm2=MmMeasurement(250.0, 5.0, "cm^2"),
+        items=[GlyphInput("mrp", height=MmMeasurement(3.0, 0.1, extrapolation_d=6.0))],
+    )
+    _, fa, _ = evaluate(catalog, [], font, calibrated=True, max_extrapolation_sides=4.0)
+    item = fa.items[0]
+    assert item.status == Status.NOT_ASSESSABLE
+    assert "too far" in item.reason
+
+
+def test_font_near_marker_is_assessable(catalog):
+    font = FontInputs(
+        panel_area_cm2=MmMeasurement(250.0, 5.0, "cm^2"),
+        items=[GlyphInput("mrp", height=MmMeasurement(3.0, 0.1, extrapolation_d=1.0))],
+    )
+    _, fa, _ = evaluate(catalog, [], font, calibrated=True, max_extrapolation_sides=4.0)
+    assert fa.items[0].status == Status.COMPLIANT
+
+
 def test_engine_is_deterministic(catalog):
     fields = [FieldExtraction(id="mrp", present=True, value="MRP Rs. 10", format_pass=True)]
     out1 = evaluate(catalog, fields, FontInputs(), calibrated=True)

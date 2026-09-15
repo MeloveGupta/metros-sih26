@@ -24,6 +24,7 @@ from .schemas.report import (
     CalibrationVerdict,
     DeclarationFinding,
     Evidence,
+    Extraction,
     Inspection,
     OriginalImage,
     Product,
@@ -37,6 +38,7 @@ from .vision.measure import (
     glyph_width_ratio,
     panel_area_cm2,
 )
+from .vision.card import card_outline_mm
 from .vision.ocr import OcrResult, Token
 from .vision.scale import CalibrationResult, detect_scale
 
@@ -92,7 +94,7 @@ def _build_font_inputs(
     area = None
     if panel_polygon_px is not None:
         area = panel_area_cm2(cal.H_img_to_mm, panel_polygon_px, cal.marker_mm,
-                              mean_side, cal.residual_px)
+                              mean_side, cal.corner_jitter_px)
     elif panel_area_cm2_known is not None:
         # Officer-supplied panel area; carry a nominal 2% uncertainty.
         area = MmMeasurement(round(panel_area_cm2_known, 3),
@@ -103,29 +105,82 @@ def _build_font_inputs(
         if f.bbox is None:
             continue
         height = glyph_height_mm(cal.H_img_to_mm, f.bbox, cal.marker_mm,
-                                 mean_side, cal.residual_px)
+                                 mean_side, cal.corner_jitter_px)
         ratio = glyph_width_ratio(cal.H_img_to_mm, f.bbox)
         items.append(GlyphInput(f.id, height=height, width_ratio=ratio, molded=molded))
     return FontInputs(panel_area_cm2=area, items=items)
 
 
+def _card_polygon_px(cal: CalibrationResult, margin_mm: float = 3.0) -> Optional[np.ndarray]:
+    """The calibration card's own outline in pixel space, expanded by a margin.
+
+    Used to exclude the card's own printed text (dictionary name, marker size,
+    print instructions) from Rule 7 measurement -- that text is ~1.2mm tall and
+    would otherwise be picked up as the smallest (and wrongly flagged) item.
+    """
+    if not cal.calibrated or cal.marker_mm is None or cal.H_img_to_mm is None:
+        return None
+    outline = card_outline_mm(cal.marker_mm)
+    xs = [p[0] for p in outline]
+    ys = [p[1] for p in outline]
+    x0, x1 = min(xs) - margin_mm, max(xs) + margin_mm
+    y0, y1 = min(ys) - margin_mm, max(ys) + margin_mm
+    corners_mm = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float64)
+    try:
+        H_inv = np.linalg.inv(cal.H_img_to_mm)
+    except np.linalg.LinAlgError:
+        return None
+    homog = np.hstack([corners_mm, np.ones((4, 1))])
+    mapped = (H_inv @ homog.T).T
+    px = mapped[:, :2] / mapped[:, 2:3]
+    return px.astype(np.float32)
+
+
+def _token_intersects_card(bbox, card_poly_px: Optional[np.ndarray]) -> bool:
+    """True if a token's pixel bbox falls on/near the calibration card.
+
+    The card polygon can be an arbitrary (rotated/perspective) quadrilateral in
+    pixel space, so this is a point-in-polygon test on the bbox's corners and
+    centre -- exact for a bbox fully inside or outside the card, and a safe
+    over-exclusion for one straddling the edge.
+    """
+    if card_poly_px is None:
+        return False
+    x, y, w, h = bbox
+    contour = card_poly_px.reshape(-1, 1, 2)
+    points = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x + w / 2, y + h / 2)]
+    return any(cv2.pointPolygonTest(contour, pt, False) >= 0 for pt in points)
+
+
 def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
-                      panel_area_cm2_known: Optional[float] = None) -> FontInputs:
+                      panel_area_cm2_known: Optional[float] = None,
+                      fields: Optional[List[FieldExtraction]] = None) -> FontInputs:
     """Measure letter height directly from OCR text tokens (Rule 7).
 
-    Rule 7 is about the MINIMUM letter height on the panel, so we measure every
-    text token in real mm and report the smallest few. This does not depend on
-    matching a declaration value to a token, which is unreliable with an LLM
-    reader.
+    Rule 7 is about the MINIMUM letter height on the PRODUCT panel, so tokens
+    that fall on the calibration card itself (its own printed dictionary name /
+    marker size / print instructions) are excluded first. Among what remains,
+    tokens already matched to an extracted declaration (MRP, net quantity,
+    dates, consumer care -- definitely product text) are preferred; only when
+    none match do we fall back to the smallest unmatched product-text tokens.
     """
     if not cal.calibrated or not tokens:
         return FontInputs()
     import re
     mean_side = _mean_side_px(cal)
+    card_poly_px = _card_polygon_px(cal)
+
+    decl_bbox_ids = {}
+    for f in (fields or []):
+        if f.bbox is not None:
+            decl_bbox_ids[tuple(f.bbox)] = f.id
+
     measured = []
     for t in tokens:
         if not t.bbox:
             continue
+        if _token_intersects_card(t.bbox, card_poly_px):
+            continue                              # calibration card's own text
         txt = t.text.strip()
         x, y, w, h = t.bbox
         # Reject OCR noise: low confidence, too-short, or not a real word/number.
@@ -140,25 +195,30 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
             continue
         try:
             hmm = glyph_height_mm(cal.H_img_to_mm, t.bbox, cal.marker_mm,
-                                  mean_side, cal.residual_px)
+                                  mean_side, cal.corner_jitter_px)
             ratio = glyph_width_ratio(cal.H_img_to_mm, t.bbox)
         except Exception:
             continue
         has_digit = bool(re.search(r"\d", txt))
-        measured.append((hmm, ratio, txt, has_digit))
+        decl_id = decl_bbox_ids.get(tuple(t.bbox))
+        measured.append((hmm, ratio, txt, has_digit, decl_id))
     if not measured:
         return FontInputs()
-    # Prefer declaration text (MRP, quantity, dates, contact all carry digits)
-    # over marketing words like "wafer"/"coated". Fall back to all if none.
+    # Prefer tokens already matched to an extracted declaration (definitely
+    # product text) over other digit-bearing text, over marketing words.
+    decl_tokens = [m for m in measured if m[4] is not None]
     digit_tokens = [m for m in measured if m[3]]
-    measured = digit_tokens or measured
-    measured.sort(key=lambda m: m[0].value)
+    ranked = decl_tokens or digit_tokens or measured
+    ranked.sort(key=lambda m: m[0].value)
     area = None
     if panel_area_cm2_known is not None:
         area = MmMeasurement(round(panel_area_cm2_known, 3),
                              round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
-    items = [GlyphInput(f'"{txt[:18]}"', height=hmm, width_ratio=ratio, molded=molded)
-             for hmm, ratio, txt, _ in measured[:3]]
+    items = [
+        GlyphInput(decl_id if decl_id is not None else f'"{txt[:18]}"',
+                  height=hmm, width_ratio=ratio, molded=molded)
+        for hmm, ratio, txt, _, decl_id in ranked[:3]
+    ]
     return FontInputs(panel_area_cm2=area, items=items)
 
 
@@ -170,7 +230,7 @@ def _to_calibration_schema(cal: CalibrationResult) -> Calibration:
         marker_mm=cal.marker_mm,
         detection_confidence=cal.detection_confidence,
         mm_per_pixel=cal.mm_per_pixel,
-        homography_residual_px=cal.residual_px,
+        corner_jitter_px=cal.corner_jitter_px,
         verdict=CalibrationVerdict.CALIBRATED if cal.calibrated
         else CalibrationVerdict.REJECTED,
         reason=cal.reason,
@@ -202,6 +262,7 @@ def run_scan(
     captured_at: Optional[datetime] = None,
     catalog: Optional[RuleCatalog] = None,
     extract_backend: str = "regex",
+    label_text_provided: bool = False,
 ) -> Report:
     """Run the full pipeline over one or more images (e.g. front + back).
 
@@ -224,7 +285,7 @@ def run_scan(
     for i, img in enumerate(images):
         c = detect_scale(img, marker_mm=marker_mm, dict_name=dict_name,
                          marker_id=marker_id,
-                         max_residual_px=settings.max_homography_residual_px)
+                         max_corner_jitter_px=settings.max_corner_jitter_px)
         if c.calibrated:
             cal, cal_idx = c, i
             break
@@ -234,8 +295,16 @@ def run_scan(
 
     # 2. Extraction over ALL images (vision) or combined OCR text (regex).
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
-    fields = extract_declarations(combined_text, catalog, backend=extract_backend,
-                                  images=list(images))
+    outcome = extract_declarations(combined_text, catalog, backend=extract_backend,
+                                   images=list(images))
+    fields = outcome.fields
+    unreadable = not outcome.used_llm and not (outcome.text_read or "").strip()
+    if outcome.used_llm:
+        extraction_backend_used = "llm"
+    elif label_text_provided:
+        extraction_backend_used = "label_text"
+    else:
+        extraction_backend_used = "ocr_regex"
 
     # Font measurement (Rule 7) needs glyph boxes from the MARKER image's OCR.
     # In the vision path OCR was skipped for speed, so if a card was found but we
@@ -255,14 +324,34 @@ def run_scan(
     #    tokens on the calibrated image; fall back to field-bbox measurement.
     if cal.calibrated and marker_tokens:
         font_inputs = _font_from_tokens(cal, marker_tokens, molded,
-                                        panel_area_cm2_known=panel_area_cm2)
+                                        panel_area_cm2_known=panel_area_cm2,
+                                        fields=fields)
     else:
         font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
                                          panel_area_cm2_known=panel_area_cm2)
 
     # 4. Deterministic evaluation.
     declarations, font_analysis, summary = evaluate(
-        catalog, fields, font_inputs, calibrated=cal.calibrated
+        catalog, fields, font_inputs, calibrated=cal.calibrated,
+        max_extrapolation_sides=settings.max_extrapolation_sides,
+    )
+
+    extraction_warnings: List[str] = []
+    if unreadable:
+        # No text could be read from any source (LLM failed/unavailable AND
+        # OCR found nothing): declarations are unknown, not "absent".
+        for d in declarations:
+            d.status = Status.NOT_ASSESSABLE
+            d.note = "label text could not be read"
+        disposition = Status.NEEDS_OFFICER_REVIEW
+        extraction_warnings.append("label text could not be read from any image")
+    else:
+        disposition = _overall_disposition(declarations, font_analysis.items)
+
+    extraction = Extraction(
+        backend_used=extraction_backend_used,
+        llm_error=outcome.llm_error,
+        warnings=extraction_warnings,
     )
 
     # 5. Assemble report (evidence from the first image; note total count).
@@ -273,13 +362,14 @@ def run_scan(
         generated_at=datetime.now(timezone.utc),
         app_version=APP_VERSION,
         rule_catalog=RuleCatalogInfo(version=catalog.version, hash=catalog.hash),
-        disposition=_overall_disposition(declarations, font_analysis.items),
+        disposition=disposition,
         inspection=inspection or Inspection(),
         product=product or Product(),
         evidence=Evidence(original=OriginalImage(
             file=image_file, sha256=_sha256_of_image(primary),
             captured_at=captured_at, width=w, height=h)),
         calibration=_to_calibration_schema(cal),
+        extraction=extraction,
         summary=summary,
         declarations=declarations,
         font_analysis=font_analysis,

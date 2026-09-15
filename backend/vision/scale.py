@@ -2,8 +2,12 @@
 
 A known-size marker in the image plane gives a metric scale (mm-per-pixel) and a
 homography that maps image pixels to a flat millimetre coordinate frame, which
-lets us measure lengths/areas anywhere on the (planar) label in real mm — with a
-reprojection residual we can turn into a measurement uncertainty.
+lets us measure lengths/areas anywhere on the (planar) label in real mm. A
+homography fit to exactly 4 corners always reprojects with ~zero residual, so
+that number is not a real quality signal; instead we re-detect the marker
+independently (raw / CLAHE-enhanced / upscaled) and use the largest corner
+displacement across those detections (`corner_jitter_px`) as the calibration
+quality measure feeding the measurement uncertainty.
 
 Design guardrail: if no marker is found, or its geometry is too degraded, this
 returns an *uncalibrated* result. Callers must then refuse to emit mm verdicts.
@@ -34,7 +38,8 @@ class CalibrationResult:
     corners_px: Optional[np.ndarray] = None      # (4, 2) float32, TL,TR,BR,BL
     H_img_to_mm: Optional[np.ndarray] = None      # 3x3 homography, pixels -> mm
     mm_per_pixel: Optional[float] = None          # mean scalar (reporting only)
-    residual_px: Optional[float] = None           # RMS reprojection error, px
+    corner_jitter_px: Optional[float] = None      # max corner displacement across
+                                                   # independent re-detections, px
     detection_confidence: Optional[float] = None  # 0..1 heuristic
     reason: Optional[str] = None
 
@@ -120,12 +125,75 @@ def _order_corners(c: np.ndarray) -> np.ndarray:
     return c.reshape(4, 2).astype(np.float32)
 
 
+def _extract_id_corners(corners, ids, marker_id: int) -> Optional[np.ndarray]:
+    if ids is None or len(ids) == 0:
+        return None
+    ids_list = ids.ravel().tolist()
+    if marker_id not in ids_list:
+        return None
+    return _order_corners(corners[ids_list.index(marker_id)])
+
+
+def _independent_detections(gray: np.ndarray, dictionary, marker_id: int) -> list:
+    """Detect `marker_id` independently on raw / CLAHE / 1.5x-upscaled variants.
+
+    Each variant is attempted regardless of whether the others succeed, so the
+    spread between their corner estimates is a real (not zero-by-construction)
+    signal of how stable the detection is.
+    """
+    found: list = []
+
+    c, ids, _ = _detect_once(gray, dictionary)
+    raw = _extract_id_corners(c, ids, marker_id)
+    if raw is not None:
+        found.append(raw)
+
+    try:
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        c2, ids2, _ = _detect_once(clahe.apply(gray), dictionary)
+        enhanced = _extract_id_corners(c2, ids2, marker_id)
+        if enhanced is not None:
+            found.append(enhanced)
+    except Exception:
+        pass
+
+    try:
+        scale = 1.5
+        h, w = gray.shape[:2]
+        up = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+        c3, ids3, _ = _detect_once(up, dictionary)
+        upscaled = _extract_id_corners(c3, ids3, marker_id)
+        if upscaled is not None:
+            found.append(upscaled / scale)
+    except Exception:
+        pass
+
+    return found
+
+
+# A homography reprojection error is not a real corner-jitter floor: even a
+# perfect detection has sub-pixel quantization noise, so never report below this.
+MIN_CORNER_JITTER_PX = 0.5
+
+
+def _corner_jitter_px(variant_corners: list) -> float:
+    """Max single-corner displacement (px) across independent detections."""
+    if len(variant_corners) < 2:
+        return MIN_CORNER_JITTER_PX
+    base = variant_corners[0]
+    max_disp = 0.0
+    for other in variant_corners[1:]:
+        d = np.linalg.norm(base - other, axis=1)
+        max_disp = max(max_disp, float(np.max(d)))
+    return max(MIN_CORNER_JITTER_PX, max_disp)
+
+
 def detect_scale(
     image: np.ndarray,
     marker_mm: float,
     dict_name: str = "DICT_4X4_50",
     marker_id: Optional[int] = None,
-    max_residual_px: float = 5.0,
+    max_corner_jitter_px: float = 2.0,
 ) -> CalibrationResult:
     """Recover metric scale from a calibration marker in `image` (BGR or gray).
 
@@ -134,7 +202,7 @@ def detect_scale(
         marker_mm: physical printed side length of the marker, in mm.
         dict_name: ArUco dictionary the card was generated with.
         marker_id: if given, use only this marker id; else the first detected.
-        max_residual_px: reject calibration above this RMS reprojection error.
+        max_corner_jitter_px: reject calibration above this corner instability.
 
     Returns:
         CalibrationResult. `.calibrated` is False when no usable marker was found
@@ -150,16 +218,16 @@ def detect_scale(
     if ids is None or len(ids) == 0:
         return CalibrationResult(False, dict_name, reason="no calibration marker detected")
 
-    ids = ids.ravel().tolist()
+    ids_list = ids.ravel().tolist()
     if marker_id is not None:
-        if marker_id not in ids:
+        if marker_id not in ids_list:
             return CalibrationResult(
-                False, dict_name, reason=f"marker id {marker_id} not present (found {ids})"
+                False, dict_name, reason=f"marker id {marker_id} not present (found {ids_list})"
             )
-        idx = ids.index(marker_id)
+        idx = ids_list.index(marker_id)
     else:
         idx = 0
-        marker_id = ids[0]
+        marker_id = ids_list[0]
 
     src = _order_corners(corners[idx])
 
@@ -175,13 +243,10 @@ def detect_scale(
             False, dict_name, marker_id=marker_id, reason="homography could not be computed"
         )
 
-    # Reprojection residual in pixels: map the ideal mm square back to px and
-    # compare with the detected corners (RMS).
-    H_inv = np.linalg.inv(H)
-    dst_h = np.hstack([dst, np.ones((4, 1), np.float32)])
-    reproj = (H_inv @ dst_h.T).T
-    reproj = reproj[:, :2] / reproj[:, 2:3]
-    residual_px = float(np.sqrt(np.mean(np.sum((reproj - src) ** 2, axis=1))))
+    # Corner stability: re-detect independently (raw/CLAHE/upscale) and take
+    # the largest single-corner displacement as the calibration quality signal.
+    variants = [src] + _independent_detections(gray, dictionary, marker_id)
+    corner_jitter_px = _corner_jitter_px(variants)
 
     # Mean scalar mm-per-pixel from the four side lengths (reporting only;
     # the homography carries the real perspective-correct mapping).
@@ -198,9 +263,10 @@ def detect_scale(
         )
     mm_per_pixel = marker_mm / mean_side_px
 
-    # Confidence heuristic: penalize residual and side-length anisotropy.
+    # Confidence heuristic: penalize corner jitter and side-length anisotropy.
     anisotropy = float(np.std(side_px) / mean_side_px)
-    confidence = max(0.0, 1.0 - residual_px / max_residual_px) * max(0.0, 1.0 - anisotropy)
+    confidence = (max(0.0, 1.0 - corner_jitter_px / max_corner_jitter_px)
+                 * max(0.0, 1.0 - anisotropy))
 
     result = CalibrationResult(
         found=True,
@@ -210,15 +276,16 @@ def detect_scale(
         corners_px=src,
         H_img_to_mm=H,
         mm_per_pixel=mm_per_pixel,
-        residual_px=residual_px,
+        corner_jitter_px=corner_jitter_px,
         detection_confidence=round(confidence, 4),
     )
 
-    if residual_px > max_residual_px:
+    if corner_jitter_px > max_corner_jitter_px:
         result.found = False
         result.H_img_to_mm = None
         result.reason = (
-            f"reprojection residual {residual_px:.2f}px exceeds limit {max_residual_px:.2f}px"
+            f"corner detection unstable ({corner_jitter_px:.2f}px jitter) "
+            f"exceeds limit {max_corner_jitter_px:.2f}px"
         )
     return result
 

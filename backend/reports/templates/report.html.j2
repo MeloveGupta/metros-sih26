@@ -76,6 +76,15 @@
     Not a final legal finding; physical verification required for enforcement.</span>
 </div>
 
+{% if r.extraction %}
+<p class="note">
+  <b>Reader:</b>
+  {{ "AI reader" if r.extraction.backend_used == "llm" else ("pasted label text" if r.extraction.backend_used == "label_text" else "OCR fallback") }}
+  {% if r.extraction.llm_error %} — AI reader failed: {{ r.extraction.llm_error }}{% endif %}
+  {% for w in r.extraction.warnings %} · {{ w }}{% endfor %}
+</p>
+{% endif %}
+
 <div class="kpis">
   <div class="kpi"><div class="n">{{ r.summary.checked }}</div><div class="l">Checked</div></div>
   <div class="kpi"><div class="n">{{ r.summary.compliant }}</div><div class="l">Compliant</div></div>
@@ -115,6 +124,7 @@
 <div class="cal">
   <b>Calibration:</b> {{ r.calibration.verdict.value.replace("_", " ") }}
   {% if r.calibration.mm_per_pixel %} · <b>{{ "%.5f"|format(r.calibration.mm_per_pixel) }} mm/px</b>{% endif %}
+  {% if r.calibration.corner_jitter_px is not none %} · <span class="muted">corner jitter {{ "%.2f"|format(r.calibration.corner_jitter_px) }}px</span>{% endif %}
   {% if r.calibration.reason %} · <span class="muted">{{ r.calibration.reason }}</span>{% endif %}
 </div>
 {% if r.font_analysis.panel_area_cm2 and r.font_analysis.table_i_band %}
