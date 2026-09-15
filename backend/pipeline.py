@@ -157,7 +157,9 @@ def _token_intersects_card(bbox, card_poly_px: Optional[np.ndarray]) -> bool:
 def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
                       panel_area_cm2_known: Optional[float] = None,
                       fields: Optional[List[FieldExtraction]] = None,
-                      panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None) -> FontInputs:
+                      panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None,
+                      category: Optional[str] = None,
+                      catalog: Optional[RuleCatalog] = None) -> FontInputs:
     """Measure letter height directly from OCR text tokens (Rule 7).
 
     Rule 7 is about the MINIMUM letter height on the PRODUCT panel, so tokens
@@ -166,12 +168,22 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     tokens already matched to an extracted declaration (MRP, net quantity,
     dates, consumer care -- definitely product text) are preferred; only when
     none match do we fall back to the smallest unmatched product-text tokens.
+
+    On a food/cosmetic package, Rule 7(5) (as substituted) exempts every
+    declaration EXCEPT net quantity/MRP/best-before/consumer-care from Rule 7
+    sizing (those declarations' content is governed by another law and their
+    size isn't Metros's business either); tokens matched to any other
+    declaration are excluded from measurement in that case.
     """
     if not cal.calibrated or not tokens:
         return FontInputs()
     import re
     mean_side = _mean_side_px(cal)
     card_poly_px = _card_polygon_px(cal)
+
+    carveout_ids = None
+    if category in ("food", "cosmetic") and catalog is not None:
+        carveout_ids = set(catalog.rule7_carveout.get("declaration_ids", []))
 
     # Panel area is computed up front so the Table-I band is still reported
     # even when no glyph token survives the filters below.
@@ -194,6 +206,10 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
             continue
         if _token_intersects_card(t.bbox, card_poly_px):
             continue                              # calibration card's own text
+        if carveout_ids is not None:
+            matched = decl_bbox_ids.get(tuple(t.bbox))
+            if matched is not None and matched not in carveout_ids:
+                continue  # Rule 7 doesn't apply to this declaration's sizing here
         txt = t.text.strip()
         x, y, w, h = t.bbox
         # Reject OCR noise: low confidence, too-short, or not a real word/number.
@@ -278,6 +294,7 @@ def run_scan(
     extract_backend: str = "regex",
     label_text_provided: bool = False,
     common_name: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> Report:
     """Run the full pipeline over one or more images (e.g. front + back).
 
@@ -357,7 +374,8 @@ def run_scan(
     if cal.calibrated and marker_tokens:
         font_inputs = _font_from_tokens(cal, marker_tokens, molded,
                                         panel_area_cm2_known=panel_area_cm2,
-                                        fields=fields, panel_polygon_px=panel_polygon_px)
+                                        fields=fields, panel_polygon_px=panel_polygon_px,
+                                        category=category, catalog=catalog)
     else:
         font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
                                          panel_area_cm2_known=panel_area_cm2)
@@ -367,9 +385,14 @@ def run_scan(
     declarations, font_analysis, summary = evaluate(
         catalog, fields, font_inputs, calibrated=cal.calibrated,
         max_extrapolation_sides=settings.max_extrapolation_sides,
+        category=category,
     )
 
     extraction_warnings: List[str] = []
+    if category is None or category == "unknown":
+        extraction_warnings.append(
+            "product category not specified; no food/cosmetic exemptions applied"
+        )
     if unreadable:
         # No text could be read from any source (LLM failed/unavailable AND
         # OCR found nothing): declarations are unknown, not "absent".

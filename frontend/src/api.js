@@ -1,10 +1,11 @@
 // Thin API client for the Metros backend. Prototype: no auth.
 
-export async function scan({ files, productName, commonName, panel }) {
+export async function scan({ files, productName, commonName, category, panel }) {
   const form = new FormData();
   for (const f of files) form.append("images", f);
   if (productName) form.append("product_name", productName);
   if (commonName) form.append("common_name", commonName);
+  if (category) form.append("category", category);
   if (panel && panel.shape) {
     form.append("panel_shape", panel.shape);
     if (panel.heightCm) form.append("panel_height_cm", panel.heightCm);

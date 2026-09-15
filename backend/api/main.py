@@ -121,6 +121,12 @@ async def scan(
             detail="upload both the front and back of the pack (two images)",
         )
 
+    if category is not None and category not in ("food", "cosmetic", "other_non_food", "unknown"):
+        raise HTTPException(
+            status_code=400,
+            detail="category must be one of: food, cosmetic, other_non_food, unknown",
+        )
+
     decoded = [_decode_image(await f.read()) for f in images]
 
     # OCR is only needed when the LLM vision path is NOT used (it reads images
@@ -146,7 +152,8 @@ async def scan(
                           panel_shape=panel_shape, panel_height_cm=panel_height_cm,
                           panel_width_cm=panel_width_cm,
                           panel_circumference_cm=panel_circumference_cm,
-                          panel_area_cm2_other=panel_area_cm2_other)
+                          panel_area_cm2_other=panel_area_cm2_other,
+                          category=category)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

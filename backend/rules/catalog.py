@@ -27,6 +27,8 @@ class DeclarationRule:
     source_url: Optional[str] = None
     gazette: Optional[str] = None
     effective_from: Optional[str] = None
+    # Per-category exemption: {"food": {"not_applicable": true, "law": ..., "clause": ...}, ...}
+    applicability: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -46,6 +48,7 @@ class RuleCatalog:
     font_absolute: dict = field(default_factory=dict)
     statute: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
+    rule7_carveout: dict = field(default_factory=dict)
 
     def declaration(self, decl_id: str) -> DeclarationRule:
         for d in self.declarations:
@@ -97,6 +100,7 @@ def load_catalog(path: Optional[Path] = None) -> RuleCatalog:
                 source_url=entry.get("source_url", default_source),
                 gazette=entry.get("gazette"),
                 effective_from=entry.get("effective_from"),
+                applicability=entry.get("applicability", {}) or {},
             )
         )
     if not declarations:
@@ -130,4 +134,5 @@ def load_catalog(path: Optional[Path] = None) -> RuleCatalog:
         font_absolute=data.get("font_absolute", {}) or {},
         statute=data.get("statute", {}) or {},
         meta=meta,
+        rule7_carveout=data.get("rule7_carveout", {}) or {},
     )

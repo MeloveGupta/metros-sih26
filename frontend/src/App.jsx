@@ -56,6 +56,7 @@ function PanelDimensions({ shape, setShape, dims, setDims }) {
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
   const [commonName, setCommonName] = useState("");
+  const [category, setCategory] = useState("unknown");
   const [panelShape, setPanelShape] = useState("");
   const [panelDims, setPanelDims] = useState({
     heightCm: "", widthCm: "", circumferenceCm: "", areaCm2Other: "",
@@ -87,7 +88,7 @@ function ScanForm({ onReport }) {
     setErr("");
     try {
       onReport(await scan({
-        files: shots.map((s) => s.file), commonName,
+        files: shots.map((s) => s.file), commonName, category,
         panel: { shape: panelShape, ...panelDims },
       }));
     } catch (e2) {
@@ -138,6 +139,16 @@ function ScanForm({ onReport }) {
         <span>Generic name of the product</span>
         <input value={commonName} placeholder="e.g. tomato ketchup"
           onChange={(e) => setCommonName(e.target.value)} />
+      </label>
+
+      <label className="field">
+        <span>Product category</span>
+        <select required value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="unknown">Unknown / not sure</option>
+          <option value="food">Food</option>
+          <option value="cosmetic">Cosmetic</option>
+          <option value="other_non_food">Other (non-food)</option>
+        </select>
       </label>
 
       <PanelDimensions shape={panelShape} setShape={setPanelShape}

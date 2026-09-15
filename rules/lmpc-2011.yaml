@@ -41,6 +41,11 @@ declarations:
     label: Name & address of manufacturer / packer / importer
     clause: "Rule 6(1)(a)"
     checks: [present, address_format]
+    applicability:
+      food:
+        not_applicable: true
+        law: "Food Safety and Standards Act, 2006"
+        clause: "Rule 6(1)(a) Explanation III"
 
   - id: country_of_origin
     label: Country of origin / manufacture / assembly (imported products)
@@ -65,8 +70,18 @@ declarations:
     checks: [present, month_year_format]
     # "or pre-packed or imported" was omitted vide GSR 779(E)/226(E), so a
     # packing-only date no longer satisfies this clause; the rule's own
-    # provisos still exempt bidi/incense-sticks/certain LPG cylinders and
-    # (from 2.5) food/cosmetic categories governed by other laws.
+    # provisos still exempt bidi/incense-sticks/certain LPG cylinders
+    # (not category-driven, so not modeled here) and food/cosmetic
+    # categories governed by other laws (modeled below).
+    applicability:
+      food:
+        not_applicable: true
+        law: "Food Safety and Standards Act, 2006"
+        clause: "Rule 6(1)(d), first proviso"
+      cosmetic:
+        not_applicable: true
+        law: "Drugs and Cosmetics Rules, 1945"
+        clause: "Rule 6(1)(d), last proviso"
 
   - id: best_before
     label: Best before / use-by date (perishable commodities)
@@ -154,3 +169,12 @@ font_absolute:
 small_package:
   clause: "Rule 7(1)"
   capacity_le_cc: 10                  # <= 10 cm^3: PDP may be an affixed card/tape
+
+# Rule 7(5), as substituted by GSR 629(E): even when a declaration's CONTENT is
+# governed by another law (e.g. a food/cosmetic manufacturer name or mfg date -
+# see each declaration's `applicability` above), these four still must meet
+# Rule 7's letter-size requirements. Used to restrict Rule 7 measurement on
+# food/cosmetic packages to only these declaration ids.
+rule7_carveout:
+  clause: "Rule 7(5)"
+  declaration_ids: [net_quantity, mrp, best_before, consumer_care]

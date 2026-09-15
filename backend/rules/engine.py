@@ -23,7 +23,7 @@ from ..schemas.report import (
     TableIBand,
 )
 from ..vision.measure import MmMeasurement
-from .catalog import RuleCatalog
+from .catalog import DeclarationRule, RuleCatalog
 
 
 @dataclass
@@ -141,12 +141,27 @@ def _apply_width_ratio(
     return status, reason
 
 
+def _category_exemption(rule: DeclarationRule, category: Optional[str]) -> Optional[Tuple[Status, str]]:
+    """A (status, note) pair if `category` exempts this declaration under
+    another law, else None. Unknown/None category exempts nothing."""
+    if not category:
+        return None
+    exemption = rule.applicability.get(category)
+    if not exemption or not exemption.get("not_applicable"):
+        return None
+    law = exemption.get("law", "another law")
+    clause = exemption.get("clause", "")
+    note = f"not assessed under LMPC Rules; governed by {law}" + (f" ({clause})" if clause else "")
+    return Status.NOT_APPLICABLE, note
+
+
 def evaluate(
     catalog: RuleCatalog,
     fields: List[FieldExtraction],
     font: FontInputs,
     calibrated: bool,
     max_extrapolation_sides: float = 4.0,
+    category: Optional[str] = None,
 ) -> Tuple[List[DeclarationFinding], FontAnalysis, Summary]:
     """Run the full deterministic evaluation."""
     by_id = {f.id: f for f in fields}
@@ -156,7 +171,8 @@ def evaluate(
         f = by_id.get(rule.id)
         if f is None:
             f = FieldExtraction(id=rule.id, present=False)
-        status, note = _declaration_status(f)
+        exemption = _category_exemption(rule, category)
+        status, note = exemption if exemption is not None else _declaration_status(f)
         fmt = (
             FormatCheck(passed=f.format_pass, pattern=f.format_pattern)
             if f.format_pass is not None

@@ -226,3 +226,55 @@ def test_no_readable_text_needs_officer_review():
     assert all(d.status == Status.NOT_ASSESSABLE for d in report.declarations)
     assert all(d.note == "label text could not be read" for d in report.declarations)
     assert any("could not be read" in w for w in report.extraction.warnings)
+
+
+# --- 2.5: category-based applicability & exemptions ---
+
+def test_category_food_exempts_manufacturer_and_mfg_date(scene_factory):
+    img, meta = scene_factory(marker_mm=40.0, side_px=400, glyph=(600, 650, 60, 90))
+    text = "Manufactured by: FoodCo Pvt Ltd, Pune 411001\nNet Qty 200 g\nMRP Rs. 45.00 (incl. of all taxes)"
+    tok = Token(text="Manufactured by: FoodCo Pvt Ltd, Pune 411001",
+               bbox=meta["glyph_bbox_px"], confidence=0.9)
+    ocr = OcrResult(text=text, tokens=[tok])
+
+    report = run_scan(img, ocr, marker_mm=40.0, category="food")
+
+    manufacturer = next(d for d in report.declarations if d.id == "manufacturer")
+    assert manufacturer.status == Status.NOT_APPLICABLE
+    assert "Food Safety and Standards Act" in manufacturer.note
+    assert "Rule 6(1)(a)" in manufacturer.note
+
+    mfg_date = next(d for d in report.declarations if d.id == "mfg_date")
+    assert mfg_date.status == Status.NOT_APPLICABLE
+
+    # Unaffected declarations still get evaluated normally.
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT
+
+
+def test_category_food_restricts_rule7_to_carveout_declarations(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    # Both placed well below the calibration card's own footprint.
+    mfr_bbox = (600, 650, 60, 20)   # ~2mm tall -- would normally be flagged
+    qty_bbox = (600, 750, 60, 90)   # ~9mm tall -- compliant
+    text = "Manufactured by: FoodCo Pvt Ltd, Pune 411001\nNet Qty 200 g"
+    tokens = [
+        Token(text="Manufactured by: FoodCo Pvt Ltd, Pune 411001", bbox=mfr_bbox, confidence=0.9),
+        Token(text="Net Qty 200 g", bbox=qty_bbox, confidence=0.9),
+    ]
+    report = run_scan(img, OcrResult(text=text, tokens=tokens), marker_mm=40.0,
+                      category="food", panel_area_cm2=150)
+
+    measured_ids = {i.declaration_id for i in report.font_analysis.items}
+    assert "manufacturer" not in measured_ids  # exempted by Rule 7(5)
+    assert "net_quantity" in measured_ids      # still required by Rule 7(5)
+
+
+def test_unknown_category_applies_everything_with_warning(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    text = "Manufactured by: FoodCo Pvt Ltd, Pune 411001"
+    report = run_scan(img, OcrResult(text=text, tokens=[]), marker_mm=40.0)
+
+    manufacturer = next(d for d in report.declarations if d.id == "manufacturer")
+    assert manufacturer.status != Status.NOT_APPLICABLE  # no exemption applied
+    assert any("category not specified" in w for w in report.extraction.warnings)
