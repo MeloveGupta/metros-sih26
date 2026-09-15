@@ -127,6 +127,12 @@ def _font_status(
             f"{threshold_mm:.1f}mm minimum; physical verification needed",
         )
 
+    return _apply_width_ratio(status, reason, width_ratio, min_width_ratio)
+
+
+def _apply_width_ratio(
+    status: Status, reason: Optional[str], width_ratio: Optional[float], min_width_ratio: float,
+) -> Tuple[Status, Optional[str]]:
     if width_ratio is not None and width_ratio < min_width_ratio:
         extra = f"width/height ratio {width_ratio:.2f} < {min_width_ratio:.2f} (Rule 7(3))"
         reason = f"{reason}; {extra}" if reason else extra
@@ -174,8 +180,11 @@ def evaluate(
     # --- Rule 7 font analysis ---
     fa = FontAnalysis()
     min_width_ratio = float(catalog.font_absolute.get("min_width_ratio", 1 / 3))
-    abs_floor = float(catalog.font_absolute.get("min_height_mm", 1.0))
-    abs_floor_molded = float(catalog.font_absolute.get("min_height_mm_molded", 2.0))
+    # Table-I band 1 (smallest panel area) has the lowest minimum of any band,
+    # so it is the only floor that can be cited when the panel area isn't
+    # known at all -- Rule 7(3) no longer has a separate absolute floor of
+    # its own (that language was moved into Table-I by GSR 629(E)).
+    band0 = catalog.font_bands[0]
 
     band = None
     fa.panel_input = font.panel_input
@@ -200,14 +209,33 @@ def evaluate(
     for g in font.items:
         if band is not None:
             threshold = band.min_height_mm_molded if g.molded else band.min_height_mm
+            status, reason = _font_status(
+                g.height, threshold, g.width_ratio, min_width_ratio, calibrated,
+                max_extrapolation_sides,
+            )
         else:
-            threshold = abs_floor_molded if g.molded else abs_floor
-        # Never accept below the absolute floor even if a band is lower.
-        threshold = max(threshold, abs_floor_molded if g.molded else abs_floor)
-        status, reason = _font_status(
-            g.height, threshold, g.width_ratio, min_width_ratio, calibrated,
-            max_extrapolation_sides,
-        )
+            # No panel area known: we can only rule OUT compliance against
+            # the lowest Table-I band's own minimum (text under that fails
+            # every band); we can never CONFIRM compliance without knowing
+            # which band actually applies.
+            floor = band0.min_height_mm_molded if g.molded else band0.min_height_mm
+            threshold = floor
+            if not calibrated or g.height is None:
+                status, reason = Status.NOT_ASSESSABLE, \
+                    "no valid calibration; millimetre height not measurable"
+            elif g.height.extrapolation_d > max_extrapolation_sides:
+                status, reason = Status.NOT_ASSESSABLE, \
+                    "text too far from calibration card for a reliable measurement"
+            elif (g.height.value + g.height.uncertainty) < floor:
+                status = Status.POTENTIAL_NON_COMPLIANCE
+                reason = (
+                    f"measured {g.height.value:.2f}±{g.height.uncertainty:.2f}mm is below "
+                    f"{floor:.1f}mm, the minimum of every Table-I band (Rule 7(2), Table-I)"
+                )
+            else:
+                status = Status.NOT_ASSESSABLE
+                reason = "panel area needed to select the Table-I band"
+            status, reason = _apply_width_ratio(status, reason, g.width_ratio, min_width_ratio)
         fa.items.append(
             FontItem(
                 declaration_id=g.declaration_id,

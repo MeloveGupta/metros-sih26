@@ -86,6 +86,34 @@ def test_uncalibrated_font_is_not_assessable(catalog):
     assert fa.items[0].status == Status.NOT_ASSESSABLE
 
 
+# --- 2.2: Rule 7(3) no longer has its own 1mm/2mm floor (GSR 629(E)) ---
+
+def test_no_panel_area_below_every_band_minimum_flags(catalog):
+    # 0.5mm is below Table-I band 1's own minimum (1.0mm) -- fails every band,
+    # so this can be ruled out even without knowing the real panel area.
+    font = FontInputs(items=[GlyphInput("mrp", height=MmMeasurement(0.5, 0.05))])
+    _, fa, _ = evaluate(catalog, [], font, calibrated=True)
+    item = fa.items[0]
+    assert item.status == Status.POTENTIAL_NON_COMPLIANCE
+    assert "Table-I" in item.reason
+    assert item.threshold_mm == 1.0
+
+
+def test_no_panel_area_above_band1_minimum_is_not_assessable(catalog):
+    # 3.0mm clears Table-I band 1's minimum, but without the panel area we
+    # don't know which band actually applies -- can't confirm compliance.
+    font = FontInputs(items=[GlyphInput("mrp", height=MmMeasurement(3.0, 0.1))])
+    _, fa, _ = evaluate(catalog, [], font, calibrated=True)
+    item = fa.items[0]
+    assert item.status == Status.NOT_ASSESSABLE
+    assert item.reason == "panel area needed to select the Table-I band"
+
+
+def test_font_absolute_has_no_height_floor(catalog):
+    assert "min_height_mm" not in catalog.font_absolute
+    assert "min_height_mm_molded" not in catalog.font_absolute
+
+
 def test_font_far_from_marker_is_not_assessable(catalog):
     # Text 6 marker-side-lengths from the marker centre (beyond the default
     # 4-side extrapolation limit) can't be trusted, even if it looks compliant.

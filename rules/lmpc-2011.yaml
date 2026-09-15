@@ -126,11 +126,17 @@ font_height_mm:
       min_height_mm: 6.0
       min_height_mm_molded: 6.0
 
-# Rule 7(3): absolute floor + width ratio.
+# Rule 7(3), as substituted by GSR 629(E) dated 23-06-2017 (w.e.f. 01-01-2018):
+# width ratio ONLY. The pre-2018 text also had a flat 1mm/2mm height floor,
+# but that language was replaced by Table-I above (band 1's own minimum,
+# 1.0mm / 2.0mm molded, IS the floor now -- there is no separate absolute
+# floor once a Table-I band applies). When no panel area is known at all, the
+# engine falls back to Table-I band 1's minimum as the only floor it can cite
+# (see rules/engine.py); that is not a distinct "Rule 7(3) floor".
 font_absolute:
   clause: "Rule 7(3)"
-  min_height_mm: 1.0                  # never below 1 mm (2 mm if molded)
-  min_height_mm_molded: 2.0
+  gazette: "GSR 629(E), 23-06-2017"
+  effective_from: "2018-01-01"
   min_width_ratio: 0.3333            # width >= 1/3 height
   width_ratio_exceptions: ["1", "i", "I", "l"]
 

@@ -84,7 +84,7 @@ Rule 7 compliance = letter/numeral height ≥ a threshold set by the **area of t
 1. Recover real-world scale — ArUco marker of known size in frame (or known package dimension / capture DPI).
 2. Measure the **principal display panel area in cm²** using that scale → pick the Table-I band.
 3. Detect glyph bounding boxes (character-level), convert pixel height → mm.
-4. Compare glyph mm against the band's minimum (Rule 7(3) also sets an absolute 1 mm floor, 2 mm if molded; width ≥ ⅓ height).
+4. Compare glyph mm against the band's minimum (Rule 7(3), as substituted by GSR 629(E), only requires width ≥ ⅓ height now — the old absolute 1 mm/2 mm floor was folded into Table-I band 1's own minimum in 2018).
 
 Table-I (current):
 

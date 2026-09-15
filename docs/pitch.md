@@ -102,8 +102,10 @@ Rule 7 compliance is a **two-measurement geometry problem**, both from one scale
 | 500 ≤ A < 2500                       | 4.0                    | 6.0            |
 | A ≥ 2500                             | 6.0                    | 6.0            |
 
-**(b) Glyph height (mm ± uncertainty)** vs. that band — plus Rule 7(3): absolute
-1 mm floor (2 mm molded), width ≥ ⅓ height (except `1, i, I, l`).
+**(b) Glyph height (mm ± uncertainty)** vs. that band — plus Rule 7(3), as
+substituted by GSR 629(E): width ≥ ⅓ height (except `1, i, I, l`). The old
+absolute 1 mm/2 mm floor was removed from 7(3) in 2018; band 1's own minimum
+(1.0 mm, 2.0 mm molded) is the only floor there is now.
 
 > A monocular photo has **no absolute scale** — the same letter is 2 mm or 20 mm
 > depending on camera distance, and both render identical pixels. No AI recovers
@@ -137,8 +139,8 @@ Rule 7 compliance is a **two-measurement geometry problem**, both from one scale
 | MRP — "₹ … incl. of all taxes" | 6(1)(e) | present + format |
 | Consumer-care (name, addr, phone, email) | 6(2) | present + format |
 
-**Rule 7 — size & placement:** letter height (mm) vs. area band, 1 mm floor,
-width ratio, principal-display-panel placement.
+**Rule 7 — size & placement:** letter height (mm) vs. area band, width ratio,
+principal-display-panel placement.
 
 **Platform features:** image upload + in-field capture, **detailed** compliance
 reports (JSON + PDF + DOCX) with per-declaration findings, mm ± uncertainty,
