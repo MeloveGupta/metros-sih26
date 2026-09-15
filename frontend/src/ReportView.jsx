@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { downloadDocx, downloadPdf, fetchImageBlobUrl, finalize } from "./api.js";
+import React, { useEffect, useState } from "react";
+import { downloadDocx, downloadPdf, fetchImageBlobUrl, finalize, getReviewItems } from "./api.js";
 
 function Pill({ status }) {
   return <span className={`pill s-${status}`}>{status.replace(/_/g, " ")}</span>;
@@ -30,13 +30,6 @@ function Gauge({ item }) {
       </div>
     </div>
   );
-}
-
-// Items needing officer attention: only the flagged (potential non-compliance) ones.
-function itemsNeedingReview(report) {
-  return report.declarations
-    .filter((d) => d.status === "potential_non_compliance")
-    .map((d) => ({ id: d.id, label: d.label, status: d.status }));
 }
 
 function EvidenceStrip({ report }) {
@@ -74,8 +67,7 @@ function EvidenceStrip({ report }) {
   );
 }
 
-function Verification({ report, onFinalized }) {
-  const items = useMemo(() => itemsNeedingReview(report), [report]);
+function Verification({ report, items, onFinalized }) {
   const [officerName, setOfficerName] = useState("");
   const [state, setState] = useState(() =>
     Object.fromEntries(items.map((i) => [i.id, { verdict: "", note: "" }])));
@@ -85,8 +77,11 @@ function Verification({ report, onFinalized }) {
   if (report.finalized_by) {
     return (
       <div className="verified-done">
-        ✓ Verified &amp; finalized by <b>{report.finalized_by}</b>. The PDF now
-        carries your findings.
+        ✓ Verified &amp; finalized by <b>{report.finalized_by}</b>.
+        {report.final_disposition && (
+          <> Officer verdict: <b>{report.final_disposition.replace(/_/g, " ")}</b>.</>
+        )}
+        {" "}The PDF now carries your findings.
       </div>
     );
   }
@@ -171,6 +166,15 @@ export default function ReportView({ report, onUpdate }) {
   const s = report.summary;
   const cal = report.calibration;
   const fa = report.font_analysis;
+  const [reviewItems, setReviewItems] = useState(null); // null = loading
+
+  useEffect(() => {
+    let cancelled = false;
+    setReviewItems(null);
+    getReviewItems(report.report_id).then((items) => !cancelled && setReviewItems(items))
+      .catch(() => !cancelled && setReviewItems([]));
+    return () => { cancelled = true; };
+  }, [report.report_id]);
   const kpis = [
     ["Checked", s.checked, ""],
     ["Compliant", s.compliant, "s-compliant"],
@@ -310,10 +314,12 @@ export default function ReportView({ report, onUpdate }) {
         </>
       )}
 
-      <Verification report={report} onFinalized={onUpdate} />
+      {reviewItems === null
+        ? <p className="muted small">Loading review items…</p>
+        : <Verification report={report} items={reviewItems} onFinalized={onUpdate} />}
 
       {/* Download only after the officer finalizes (or when nothing needs review). */}
-      {(report.finalized_by || itemsNeedingReview(report).length === 0) && (
+      {reviewItems !== null && (report.finalized_by || reviewItems.length === 0) && (
         <div className="dlrow">
           <button type="button" className="dl"
             onClick={() => downloadPdf(report.report_id).catch((e) => alert(e.message || e))}>

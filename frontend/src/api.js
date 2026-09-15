@@ -61,6 +61,12 @@ export async function scan({ files, productName, brand, commonName, category, pa
   return _asJson(res, "Scan failed");
 }
 
+export async function getReviewItems(reportId) {
+  const res = await fetch(`/scans/${reportId}/review-items`, { headers: _authHeaders() });
+  const body = await _asJson(res, "Could not load review items");
+  return body.items;
+}
+
 export async function listScans(filters = {}) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {

@@ -258,4 +258,10 @@ class Report(BaseModel):
     officer_actions: List[OfficerAction] = Field(default_factory=list)
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[str] = None
+    # Set on finalize: the officer's own verdict, kept separate from the
+    # automated `disposition` above (which is never overwritten).
+    final_disposition: Optional[Literal[
+        "potential_non_compliance_confirmed_by_officer",
+        "verified_compliant_by_officer",
+    ]] = None
     limitations: str = LIMITATIONS_TEXT

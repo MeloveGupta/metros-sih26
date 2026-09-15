@@ -108,8 +108,12 @@ def test_officer_scan_and_finalize_succeeds(client, users):
     assert report["inspection"]["officer"]["id"]
     assert report["inspection"]["officer"]["role"] == "officer"
 
+    review_items = client.get(f"/scans/{report['report_id']}/review-items",
+                              headers=headers).json()["items"]
+    actions = [{"declaration_id": i["id"], "verdict": "verified_compliant", "note": "checked"}
+              for i in review_items]
     finalize_resp = client.post(
-        f"/scans/{report['report_id']}/finalize", json={"actions": []}, headers=headers,
+        f"/scans/{report['report_id']}/finalize", json={"actions": actions}, headers=headers,
     )
     assert finalize_resp.status_code == 200, finalize_resp.text
 

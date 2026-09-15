@@ -62,6 +62,17 @@ def test_scan_no_auth_and_fetch(client):
     listed = client.get("/scans").json()
     assert any(s["id"] == scan_id for s in listed["results"])
 
+    # This scan leaves review items outstanding (e.g. the static Rule 8
+    # grouping check, generic name needing confirmation) -- downloads are
+    # gated until an officer finalizes.
+    review_items = client.get(f"/scans/{scan_id}/review-items").json()["items"]
+    assert review_items
+    assert client.get(f"/scans/{scan_id}/report.pdf").status_code == 409
+    actions = [{"declaration_id": i["id"], "verdict": "verified_compliant", "note": "checked"}
+              for i in review_items]
+    finalized = client.post(f"/scans/{scan_id}/finalize", json={"actions": actions})
+    assert finalized.status_code == 200
+
     pdf = client.get(f"/scans/{scan_id}/report.pdf")
     # 200 when WeasyPrint's native stack is present, 503 when it isn't.
     assert pdf.status_code in (200, 503)
@@ -204,26 +215,86 @@ def test_invalid_source_rejected(client):
     assert r.status_code == 400
 
 
-def test_finalize_records_officer_actions(client):
-    scan_id = client.post(
+def _scan_with_gaps(client) -> str:
+    return client.post(
         "/scan",
         files=[("images", ("f.png", _marker_png(), "image/png")),
                ("images", ("b.png", _marker_png(), "image/png"))],
         data={"label_text": "MRP Rs. 10", "marker_mm": "40"},
     ).json()["report_id"]
 
+
+def test_review_items_lists_every_flagged_finding(client):
+    scan_id = _scan_with_gaps(client)
+    items = client.get(f"/scans/{scan_id}/review-items").json()["items"]
+    assert items  # MRP-only label text leaves several Rule 6 declarations unresolved
+    assert all(i["status"] in ("potential_non_compliance", "not_detected", "not_assessable")
+              for i in items)
+    assert any(i["id"] == "net_quantity" for i in items)
+
+
+def test_finalize_records_officer_actions(client):
+    scan_id = _scan_with_gaps(client)
+    items = client.get(f"/scans/{scan_id}/review-items").json()["items"]
+
     # confirmed issue without a note is rejected
     bad = client.post(f"/scans/{scan_id}/finalize", json={
         "actions": [{"declaration_id": "mrp", "verdict": "confirmed_issue", "note": ""}]})
     assert bad.status_code == 400
 
-    ok = client.post(f"/scans/{scan_id}/finalize", json={
-        "officer_name": "Insp. Rao",
-        "actions": [
-            {"declaration_id": "mrp", "verdict": "verified_compliant", "note": "reads 10 on pack"},
-            {"declaration_id": "net_quantity", "verdict": "confirmed_issue", "note": "no net qty"},
-        ]})
+    # a decision on only some of the flagged items is rejected, naming what's missing
+    partial = client.post(f"/scans/{scan_id}/finalize", json={
+        "actions": [{"declaration_id": items[0]["id"], "verdict": "verified_compliant",
+                    "note": "checked"}]})
+    assert partial.status_code == 400
+    assert "missing" in partial.json()["detail"]
+
+    actions = [
+        {"declaration_id": i["id"],
+         "verdict": "confirmed_issue" if i["id"] == "net_quantity" else "verified_compliant",
+         "note": "no net qty on pack" if i["id"] == "net_quantity" else "checked physically"}
+        for i in items
+    ]
+    ok = client.post(f"/scans/{scan_id}/finalize",
+                     json={"officer_name": "Insp. Rao", "actions": actions})
     assert ok.status_code == 200
     body = ok.json()
     assert body["finalized_by"] == "Insp. Rao"
-    assert len(body["officer_actions"]) == 2
+    assert len(body["officer_actions"]) == len(items)
+    assert body["final_disposition"] == "potential_non_compliance_confirmed_by_officer"
+
+    # already finalized -> 409, even with a fully-decided body
+    again = client.post(f"/scans/{scan_id}/finalize",
+                        json={"officer_name": "Insp. Rao", "actions": actions})
+    assert again.status_code == 409
+
+
+def test_download_gated_until_finalized_when_review_items_pending(client):
+    scan_id = _scan_with_gaps(client)
+    assert client.get(f"/scans/{scan_id}/report.pdf").status_code == 409
+
+    items = client.get(f"/scans/{scan_id}/review-items").json()["items"]
+    actions = [{"declaration_id": i["id"], "verdict": "verified_compliant", "note": "checked"}
+              for i in items]
+    client.post(f"/scans/{scan_id}/finalize", json={"actions": actions})
+
+    pdf = client.get(f"/scans/{scan_id}/report.pdf")
+    assert pdf.status_code in (200, 503)  # 503 only if WeasyPrint natives are missing
+
+
+def test_download_allowed_without_finalizing_when_nothing_to_review(client):
+    # E-commerce listing (no font/placement checks) with every Rule 6 declaration
+    # either matched or legitimately not_applicable -- a genuine zero-review-items scan.
+    scan_id = client.post(
+        "/scan",
+        data={"label_text": (
+            "Tomato Ketchup\n"
+            "Manufactured by: FoodCo Pvt Ltd, Plot 12, Pune, Maharashtra 411001\n"
+            "Net Qty 90 g\n"
+            "MRP Rs. 45.00 (incl. of all taxes)\n"
+            "Unit sale price: Rs. 0.50 per g\n"
+            "Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567\n"
+        ), "common_name": "tomato ketchup", "category": "food", "source": "ecommerce_listing"},
+    ).json()["report_id"]
+    assert client.get(f"/scans/{scan_id}/review-items").json()["items"] == []
+    assert client.get(f"/scans/{scan_id}/report.pdf").status_code in (200, 503)

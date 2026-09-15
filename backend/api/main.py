@@ -8,6 +8,7 @@ Endpoints:
   GET  /scans                     search the repository (paged)
   GET  /stats                     dashboard KPIs
   GET  /scans/{id}                fetch a stored report
+  GET  /scans/{id}/review-items   findings that need an officer's decision
   GET  /scans/{id}/images/{n}     download the n-th uploaded evidence image
   GET  /scans/{id}/crops/{name}   download a declaration's evidence crop
   GET  /scans/{id}/report.pdf     download the PDF report
@@ -370,12 +371,53 @@ def get_scan_crop(scan_id: str, name: str, session=Depends(get_session),
     return FileResponse(str(path))
 
 
+_REVIEW_STATUSES = {"potential_non_compliance", "not_detected", "not_assessable"}
+
+
+def _review_items(report) -> List[dict]:
+    """Every declaration/font/placement finding an officer must personally
+    check -- anything the automated pipeline couldn't clear on its own."""
+    items = []
+    for d in report.declarations:
+        if d.status.value in _REVIEW_STATUSES:
+            items.append({"kind": "declaration", "id": d.id, "label": d.label,
+                          "clause": d.clause_ref.clause, "status": d.status.value})
+    for f in report.font_analysis.items:
+        if f.status.value in _REVIEW_STATUSES:
+            items.append({"kind": "font", "id": f.declaration_id,
+                          "label": f"Letter height -- {f.declaration_id}",
+                          "clause": "Rule 7", "status": f.status.value})
+    for p in report.placement:
+        if p.status.value in _REVIEW_STATUSES:
+            items.append({"kind": "placement", "id": p.id, "label": p.label,
+                          "clause": p.clause_ref.clause, "status": p.status.value})
+    return items
+
+
+@app.get("/scans/{scan_id}/review-items")
+def get_review_items(scan_id: str, session=Depends(get_session),
+                     _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
+    report = get_report(session, scan_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    return {"items": _review_items(report)}
+
+
+def _require_finalized_or_nothing_to_review(report) -> None:
+    if report.finalized_at is None and _review_items(report):
+        raise HTTPException(
+            status_code=409,
+            detail="this report has unresolved review items; finalize it before downloading",
+        )
+
+
 @app.get("/scans/{scan_id}/report.pdf")
 def download_pdf(scan_id: str, session=Depends(get_session),
                  _user: CurrentUser = Depends(require_role("officer", "admin", "auditor"))):
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
+    _require_finalized_or_nothing_to_review(report)
     out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.pdf"
     try:
         render_pdf(report, out)
@@ -390,6 +432,7 @@ def download_docx(scan_id: str, session=Depends(get_session),
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
+    _require_finalized_or_nothing_to_review(report)
     out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
     try:
         render_docx(report, out)
@@ -426,6 +469,17 @@ def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session),
     report = get_report(session, scan_id)
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
+    if report.finalized_at is not None:
+        raise HTTPException(status_code=409, detail="this report is already finalized")
+
+    review_items = _review_items(report)
+    submitted_ids = {a.declaration_id for a in body.actions}
+    missing = [item["label"] for item in review_items if item["id"] not in submitted_ids]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"a decision is required for every flagged item, missing: {', '.join(missing)}",
+        )
 
     now = datetime.now(timezone.utc)
     officer_id = current_user.sub
@@ -445,6 +499,12 @@ def finalize(scan_id: str, body: FinalizeBody, session=Depends(get_session),
         ))
         append_audit(session, action=f"officer_{a.verdict}", user_id=officer_id,
                      target=f"{scan_id}/{a.declaration_id}", reason=a.note.strip())
+
+    report.final_disposition = (
+        "potential_non_compliance_confirmed_by_officer"
+        if any(a.verdict == "confirmed_issue" for a in body.actions)
+        else "verified_compliant_by_officer"
+    )
 
     # Record who finalized + when in the inspection block.
     if report.inspection.officer:
