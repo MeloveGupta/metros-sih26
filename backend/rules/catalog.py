@@ -50,6 +50,7 @@ class RuleCatalog:
     meta: dict = field(default_factory=dict)
     rule7_carveout: dict = field(default_factory=dict)
     placement: List[DeclarationRule] = field(default_factory=list)
+    quantity_declaration: dict = field(default_factory=dict)
 
     def declaration(self, decl_id: str) -> DeclarationRule:
         for d in self.declarations:
@@ -157,4 +158,5 @@ def load_catalog(path: Optional[Path] = None) -> RuleCatalog:
         meta=meta,
         rule7_carveout=data.get("rule7_carveout", {}) or {},
         placement=placement,
+        quantity_declaration=data.get("quantity_declaration", {}) or {},
     )

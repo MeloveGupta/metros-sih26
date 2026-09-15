@@ -16,6 +16,7 @@ from ..rules.catalog import RuleCatalog
 from .fields import (
     FieldExtraction,
     _ORIGIN_CUE,
+    analyze_quantity_declaration,
     extract_fields,
     normalize_ws,
     validate_consumer_care,
@@ -93,14 +94,29 @@ def _reconcile_country_of_origin(fields, text: str) -> None:
             f.present, f.value = False, None
 
 
-def _apply_deterministic_validators(fields) -> None:
+def _apply_deterministic_validators(fields, quantity_config: Optional[dict] = None) -> None:
     for f in fields:
         validator = _DETERMINISTIC_VALIDATORS.get(f.id)
-        if validator is None or not f.present or not f.value:
-            continue
-        ok, detail = validator(f.value)
-        f.format_pass = ok
-        f.format_detail = None if ok else detail
+        if validator is not None and f.present and f.value:
+            ok, detail = validator(f.value)
+            f.format_pass = ok
+            f.format_detail = None if ok else detail
+        if f.id == "net_quantity" and f.present and f.value:
+            # Rules 11-13 (misleading qualifiers, "when packed", banned
+            # counting words, non-SI units, unit-magnitude mismatches) apply
+            # to the LLM's own value too -- it only extracts, never decides.
+            notes = analyze_quantity_declaration(f.value, quantity_config)
+            flags = [n for sev, n in notes if sev == "flag"]
+            reviews = [n for sev, n in notes if sev == "review"]
+            softs = [n for sev, n in notes if sev == "note"]
+            if flags:
+                f.format_pass = False
+                f.format_detail = "; ".join(flags + reviews + softs)
+            elif reviews:
+                f.needs_confirmation = True
+                f.confirmation_reason = "; ".join(reviews + softs)
+            elif softs:
+                f.format_detail = "; ".join(softs)
 
 
 def extract_declarations(
@@ -119,10 +135,12 @@ def extract_declarations(
     """
     ids = [d.id for d in catalog.declarations]
     text = text or ""
+    qty_config = catalog.quantity_declaration or None
 
     if backend == "regex":
         return ExtractionOutcome(
-            fields=extract_fields(text, ids, common_name_hint=common_name_hint),
+            fields=extract_fields(text, ids, common_name_hint=common_name_hint,
+                                  quantity_config=qty_config),
             text_read=text,
         )
 
@@ -140,7 +158,7 @@ def extract_declarations(
                     fields = extract_fields_llm(text, catalog, ids)
                 _reconcile_common_name(fields, text, common_name_hint)
                 _reconcile_country_of_origin(fields, text)
-                _apply_deterministic_validators(fields)
+                _apply_deterministic_validators(fields, qty_config)
                 return ExtractionOutcome(fields=fields, used_llm=True)
             except ExtractionError as exc:
                 if backend == "llm":
@@ -160,13 +178,15 @@ def extract_declarations(
                                 continue
                         fallback_text = "\n".join(p for p in parts if p)
                 return ExtractionOutcome(
-                    fields=extract_fields(fallback_text, ids, common_name_hint=common_name_hint),
+                    fields=extract_fields(fallback_text, ids, common_name_hint=common_name_hint,
+                                          quantity_config=qty_config),
                     used_llm=False,
                     llm_error=str(exc),
                     text_read=fallback_text,
                 )
         return ExtractionOutcome(
-            fields=extract_fields(text, ids, common_name_hint=common_name_hint),
+            fields=extract_fields(text, ids, common_name_hint=common_name_hint,
+                                  quantity_config=qty_config),
             text_read=text,
         )
 

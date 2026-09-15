@@ -199,3 +199,42 @@ placement:
     # Rule 2(h) defines the PDP as the area carrying the grouped mandatory
     # declarations; whether the declarations on a given pack are properly
     # "grouped" is not auto-judged -- always routed to officer review.
+
+# --- Rules 11-13: misleading/non-standard quantity declarations ---
+quantity_declaration:
+  misleading_qualifiers:
+    clause: "Rule 12(6)"
+    gazette: "GSR 784(E), 24-10-2011"
+    effective_from: "2011-10-24"
+    # "shall not contain any word or expression... which tends to create or is
+    # likely to create an exaggerated, misleading or inadequate [impression]
+    # as to the quantity" (as substituted).
+    words: ["minimum", "not less than", "average", "about", "approx", "approximately", "up to"]
+
+  when_packed:
+    clause: "Rule 11(2), 11(4)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    # "when packed" (or the like) is permitted only for commodities specified
+    # in the Third Schedule (significant environmental weight/measure
+    # variation); schedule membership is not auto-judged here.
+    phrase: "when packed"
+
+  banned_counting_words:
+    clause: "Rule 13(4)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    words: ["dozen", "score", "gross", "great gross"]
+
+  non_si_units:
+    clause: "Rule 13(5)(i)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    units: ["oz", "lb", "fl oz", "pound", "ounce"]
+
+  # Soft note only, not a hard flag -- see the open legal question in the
+  # final report about whether these symbols are themselves non-compliant or
+  # just unconventional spelling of a compliant SI unit.
+  nonstandard_spellings:
+    clause: "Rule 13(5)"
+    units: ["gm", "gms", "ltr"]

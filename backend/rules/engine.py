@@ -92,7 +92,9 @@ def _declaration_status(f: FieldExtraction) -> Tuple[Status, Optional[str]]:
             Status.POTENTIAL_NON_COMPLIANCE,
             f.format_detail or "detected but does not match the prescribed format; verify",
         )
-    return Status.COMPLIANT, None
+    # format_detail may still carry a soft, non-hard-flag note (e.g. a
+    # non-standard unit spelling) even when the declaration otherwise passes.
+    return Status.COMPLIANT, f.format_detail
 
 
 def _font_status(

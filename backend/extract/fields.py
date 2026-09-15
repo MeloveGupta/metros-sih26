@@ -273,11 +273,109 @@ def parse_common_name(text: str, hint: Optional[str] = None) -> FieldExtraction:
     )
 
 
-def parse_net_quantity(text: str) -> FieldExtraction:
+# --- Rules 11-13: misleading/non-standard quantity declarations ---
+_DEFAULT_QTY_CONFIG = {
+    "misleading_qualifiers": {
+        "words": ["minimum", "not less than", "average", "about", "approx",
+                  "approximately", "up to"],
+        "clause": "Rule 12(6)",
+    },
+    "when_packed": {"phrase": "when packed", "clause": "Rule 11(2), 11(4)"},
+    "banned_counting_words": {
+        "words": ["dozen", "score", "gross", "great gross"], "clause": "Rule 13(4)",
+    },
+    "non_si_units": {
+        "units": ["oz", "lb", "fl oz", "pound", "ounce"], "clause": "Rule 13(5)(i)",
+    },
+    "nonstandard_spellings": {"units": ["gm", "gms", "ltr"], "clause": "Rule 13(5)"},
+}
+
+
+def _unit_magnitude_mismatch(line: str) -> Optional[str]:
+    """Rule 13(2)/(3): below 1kg/1L, use g/ml; at/above, use kg/L (exactly
+    1kg/1L may use either, per the proviso)."""
+    m = _QTY_NUM.search(line)
+    if not m:
+        return None
+    num = float(m.group(1).replace(",", ""))
+    unit = m.group(2).lower()
+    if unit in _USP_MASS_BASE:
+        base_g = num * _USP_MASS_BASE[unit]
+        is_small_unit = _USP_MASS_BASE[unit] == 1
+        if base_g > 1000 and is_small_unit:
+            return (f"'{m.group(0)}' ({base_g:.0f}g) is more than 1kg; Rule 13(3) requires "
+                    "kilograms (with a decimal/sub-multiple), not grams")
+        if base_g < 1000 and not is_small_unit:
+            return (f"'{m.group(0)}' ({base_g:.0f}g) is less than 1kg; Rule 13(2) requires "
+                    "grams, not kilograms")
+    elif unit in _USP_VOLUME_BASE:
+        base_ml = num * _USP_VOLUME_BASE[unit]
+        is_small_unit = _USP_VOLUME_BASE[unit] == 1
+        if base_ml > 1000 and is_small_unit:
+            return (f"'{m.group(0)}' ({base_ml:.0f}ml) is more than 1 litre; Rule 13(3) "
+                    "requires litres, not millilitres")
+        if base_ml < 1000 and not is_small_unit:
+            return (f"'{m.group(0)}' ({base_ml:.0f}ml) is less than 1 litre; Rule 13(2) "
+                    "requires millilitres, not litres")
+    return None
+
+
+def analyze_quantity_declaration(line: str, config: Optional[dict] = None) -> list:
+    """Rules 11-13 checks on a net-quantity declaration line. Returns a list
+    of (severity, note) pairs: "flag" (potential non-compliance), "review"
+    (needs officer review, never auto-judged), or "note" (soft, not a hard
+    flag)."""
+    cfg = config or _DEFAULT_QTY_CONFIG
+    low = line.lower()
+    out = []
+
+    qual_cfg = cfg.get("misleading_qualifiers", {})
+    for w in qual_cfg.get("words", []):
+        if re.search(rf"\b{re.escape(w)}\b", low):
+            out.append(("flag", f"quantity qualified by '{w}', which may create an "
+                                f"exaggerated or misleading impression of quantity "
+                                f"({qual_cfg.get('clause', 'Rule 12(6)')})"))
+            break
+
+    wp_cfg = cfg.get("when_packed", {})
+    phrase = wp_cfg.get("phrase", "when packed")
+    if phrase in low:
+        out.append(("review", f"'{phrase}' is only permitted for commodities listed in the "
+                              f"Third Schedule ({wp_cfg.get('clause', 'Rule 11(2), 11(4)')}); verify"))
+
+    cw_cfg = cfg.get("banned_counting_words", {})
+    for w in cw_cfg.get("words", []):
+        if re.search(rf"\b{re.escape(w)}\b", low):
+            out.append(("flag", f"'{w}' is a banned counting word "
+                                f"({cw_cfg.get('clause', 'Rule 13(4)')})"))
+            break
+
+    si_cfg = cfg.get("non_si_units", {})
+    for u in si_cfg.get("units", []):
+        if re.search(rf"\b{re.escape(u)}\b", low):
+            out.append(("flag", f"'{u}' is not an SI unit ({si_cfg.get('clause', 'Rule 13(5)(i)')})"))
+            break
+
+    mismatch = _unit_magnitude_mismatch(line)
+    if mismatch:
+        out.append(("flag", mismatch))
+
+    spell_cfg = cfg.get("nonstandard_spellings", {})
+    for u in spell_cfg.get("units", []):
+        if re.search(rf"\b{re.escape(u)}\b", low):
+            out.append(("note", f"'{u}' is a non-standard unit symbol; verify"))
+            break
+
+    return out
+
+
+def parse_net_quantity(text: str, quantity_config: Optional[dict] = None) -> FieldExtraction:
     """Require a net-quantity cue near the number; nutrition-facts lines never
     count (e.g. "Protein 12 g per serving" is not a net-quantity declaration).
     An uncued number+unit is recorded only as a low-confidence, format-failed
-    candidate, never a pass."""
+    candidate, never a pass. A cued match is further checked against Rules
+    11-13 (misleading qualifiers, "when packed", banned counting words,
+    non-SI units, unit-vs-magnitude mismatches, non-standard spellings)."""
     candidate: Optional[FieldExtraction] = None
     for line in text.splitlines():
         if _NUTRITION_WORDS.search(line):
@@ -286,10 +384,23 @@ def parse_net_quantity(text: str) -> FieldExtraction:
         if not m:
             continue
         if _NET_QTY_CUE.search(line):
-            return FieldExtraction(
+            f = FieldExtraction(
                 id="net_quantity", present=True, value=m.group(0).strip(),
                 format_pass=True, format_pattern="net-qty cue + number + standard unit",
             )
+            notes = analyze_quantity_declaration(line, quantity_config)
+            flags = [n for sev, n in notes if sev == "flag"]
+            reviews = [n for sev, n in notes if sev == "review"]
+            softs = [n for sev, n in notes if sev == "note"]
+            if flags:
+                f.format_pass = False
+                f.format_detail = "; ".join(flags + reviews + softs)
+            elif reviews:
+                f.needs_confirmation = True
+                f.confirmation_reason = "; ".join(reviews + softs)
+            elif softs:
+                f.format_detail = "; ".join(softs)  # surfaced even though format_pass stays True
+            return f
         if candidate is None:
             candidate = FieldExtraction(
                 id="net_quantity", present=True, value=m.group(0).strip(),
@@ -394,7 +505,8 @@ _PARSERS: Dict[str, Callable[[str], FieldExtraction]] = {
 
 
 def extract_fields(text: str, declaration_ids: List[str],
-                   common_name_hint: Optional[str] = None) -> List[FieldExtraction]:
+                   common_name_hint: Optional[str] = None,
+                   quantity_config: Optional[dict] = None) -> List[FieldExtraction]:
     """Extract each requested declaration from `text`.
 
     Unknown ids (no parser) yield a present=False extraction so the engine reports
@@ -405,6 +517,9 @@ def extract_fields(text: str, declaration_ids: List[str],
     for decl_id in declaration_ids:
         if decl_id == "common_name":
             out.append(parse_common_name(normalized, hint=common_name_hint))
+            continue
+        if decl_id == "net_quantity":
+            out.append(parse_net_quantity(normalized, quantity_config=quantity_config))
             continue
         parser: Optional[Callable[[str], FieldExtraction]] = _PARSERS.get(decl_id)
         out.append(parser(normalized) if parser else FieldExtraction(id=decl_id, present=False))

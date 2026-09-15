@@ -11,6 +11,7 @@ from backend.extract.fields import (
     parse_net_quantity,
     parse_unit_sale_price,
 )
+from backend.rules.catalog import load_catalog
 
 
 LABEL = """
@@ -204,3 +205,75 @@ def test_mrp_incl_taxes_scoped_to_mrp_line():
     f = parse_mrp(text)
     assert f.present is True
     assert f.format_pass is False
+
+
+# --- 2.9: misleading/non-standard quantity declarations, Rules 11-13 ---
+
+def test_net_quantity_misleading_qualifier_flagged():
+    f = parse_net_quantity("Net Qty minimum 200 g")
+    assert f.present is True
+    assert f.format_pass is False
+    assert "Rule 12(6)" in f.format_detail
+
+
+def test_net_quantity_approx_qualifier_flagged():
+    f = parse_net_quantity("Net Qty approx 200 g")
+    assert f.format_pass is False
+    assert "Rule 12(6)" in f.format_detail
+
+
+def test_net_quantity_when_packed_routed_to_review():
+    f = parse_net_quantity("Net Qty 200 g when packed")
+    assert f.present is True
+    assert f.needs_confirmation is True
+    assert "Third Schedule" in f.confirmation_reason
+
+
+def test_net_quantity_banned_counting_word_flagged():
+    f = parse_net_quantity("Net Qty 200 g (sold by the dozen)")
+    assert f.present is True
+    assert f.format_pass is False
+    assert "Rule 13(4)" in f.format_detail
+
+
+def test_net_quantity_non_si_unit_flagged():
+    f = parse_net_quantity("Net Qty 200 g (equivalent to 12 oz)")
+    assert f.present is True
+    assert f.format_pass is False
+    assert "Rule 13(5)(i)" in f.format_detail
+
+
+def test_net_quantity_under_1kg_must_use_grams():
+    f = parse_net_quantity("Net Qty 0.5 kg")
+    assert f.format_pass is False
+    assert "Rule 13(2)" in f.format_detail
+
+
+def test_net_quantity_over_1kg_must_use_kilograms():
+    f = parse_net_quantity("Net Qty 1500 g")
+    assert f.format_pass is False
+    assert "Rule 13(3)" in f.format_detail
+
+
+def test_net_quantity_nonstandard_spelling_is_soft_note_not_a_flag():
+    f = parse_net_quantity("Net Qty 200 gm")
+    assert f.present is True
+    assert f.format_pass is True  # soft note only, never a hard flag
+    assert "non-standard unit symbol" in f.format_detail
+
+
+def test_net_quantity_500g_1kg_1000g_all_pass():
+    for text in ["Net Qty 500 g", "Net Qty 1 kg", "Net Qty 1000 g"]:
+        f = parse_net_quantity(text)
+        assert f.present is True, text
+        assert f.format_pass is True, text
+        assert f.format_detail is None, text
+
+
+def test_quantity_declaration_catalog_section_loaded():
+    catalog = load_catalog()
+    qcfg = catalog.quantity_declaration
+    assert qcfg["misleading_qualifiers"]["clause"] == "Rule 12(6)"
+    assert "minimum" in qcfg["misleading_qualifiers"]["words"]
+    assert qcfg["banned_counting_words"]["clause"] == "Rule 13(4)"
+    assert qcfg["non_si_units"]["clause"] == "Rule 13(5)(i)"
