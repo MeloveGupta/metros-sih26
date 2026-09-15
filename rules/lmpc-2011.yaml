@@ -178,3 +178,24 @@ small_package:
 rule7_carveout:
   clause: "Rule 7(5)"
   declaration_ids: [net_quantity, mrp, best_before, consumer_care]
+
+# --- Rule 8: where declarations must appear on the package ---
+placement:
+  - id: placement_clear_space
+    label: Clear space around the net quantity declaration
+    clause: "Rule 8(1), proviso"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    # Proviso: the area surrounding the net-quantity declaration must be free
+    # of other printed information -- at least the numeral height above and
+    # below, and at least twice the numeral height to the left and right.
+    # This is checked as a relative (pixel-space) test; no calibration needed.
+
+  - id: placement_grouping
+    label: Grouping of declarations on the principal display panel
+    clause: "Rule 2(h), 8(1)"
+    gazette: "LMPC Rules, 2011 (original)"
+    effective_from: "2011-04-01"
+    # Rule 2(h) defines the PDP as the area carrying the grouped mandatory
+    # declarations; whether the declarations on a given pack are properly
+    # "grouped" is not auto-judged -- always routed to officer review.

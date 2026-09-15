@@ -49,12 +49,19 @@ class RuleCatalog:
     statute: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
     rule7_carveout: dict = field(default_factory=dict)
+    placement: List[DeclarationRule] = field(default_factory=list)
 
     def declaration(self, decl_id: str) -> DeclarationRule:
         for d in self.declarations:
             if d.id == decl_id:
                 return d
         raise RuleCatalogError(f"no declaration rule with id {decl_id!r}")
+
+    def placement_rule(self, rule_id: str) -> DeclarationRule:
+        for d in self.placement:
+            if d.id == rule_id:
+                return d
+        raise RuleCatalogError(f"no placement rule with id {rule_id!r}")
 
     def select_band(self, area_cm2: float) -> FontBand:
         """Pick the Rule 7 Table-I band for a principal-display-panel area."""
@@ -106,6 +113,20 @@ def load_catalog(path: Optional[Path] = None) -> RuleCatalog:
     if not declarations:
         raise RuleCatalogError("catalog has no declarations")
 
+    placement: List[DeclarationRule] = []
+    for entry in data.get("placement", []) or []:
+        placement.append(
+            DeclarationRule(
+                id=_require(entry, "id", "placement rule"),
+                label=_require(entry, "label", "placement rule"),
+                clause=_require(entry, "clause", "placement rule"),
+                checks=list(entry.get("checks", [])),
+                source_url=entry.get("source_url", default_source),
+                gazette=entry.get("gazette"),
+                effective_from=entry.get("effective_from"),
+            )
+        )
+
     font = _require(data, "font_height_mm", "catalog")
     bands: List[FontBand] = []
     for b in _require(font, "bands", "font_height_mm"):
@@ -135,4 +156,5 @@ def load_catalog(path: Optional[Path] = None) -> RuleCatalog:
         statute=data.get("statute", {}) or {},
         meta=meta,
         rule7_carveout=data.get("rule7_carveout", {}) or {},
+        placement=placement,
     )

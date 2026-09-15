@@ -23,6 +23,7 @@ from .extract.dispatch import extract_declarations
 from .schemas.report import (
     Calibration,
     CalibrationVerdict,
+    ClauseRef,
     DeclarationFinding,
     Evidence,
     Extraction,
@@ -247,6 +248,65 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     return FontInputs(panel_area_cm2=area, items=items)
 
 
+def _rects_intersect(a, b) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and ax + aw > bx and ay < by + ah and ay + ah > by
+
+
+def _placement_findings(catalog: RuleCatalog, fields: List[FieldExtraction],
+                        tokens) -> List[DeclarationFinding]:
+    """Rule 8 placement checks: clear space around net quantity (auto-checked,
+    relative pixel-space only -- no calibration needed), and a standing
+    officer-review item for whether declarations are properly grouped on the
+    principal display panel (Rule 2(h)), which is never auto-judged."""
+    findings: List[DeclarationFinding] = []
+
+    def _clause_ref_for(rule_id: str) -> ClauseRef:
+        rule = catalog.placement_rule(rule_id)
+        return ClauseRef(clause=rule.clause, source_url=rule.source_url,
+                         gazette=rule.gazette, effective_from=rule.effective_from)
+
+    clear_space_rule = catalog.placement_rule("placement_clear_space")
+    net_qty = next((f for f in fields if f.id == "net_quantity" and f.bbox is not None), None)
+    if net_qty is None:
+        findings.append(DeclarationFinding(
+            id="placement_clear_space", label=clear_space_rule.label,
+            clause_ref=_clause_ref_for("placement_clear_space"),
+            status=Status.NOT_ASSESSABLE,
+            note="no net-quantity bounding box available to check clear space",
+        ))
+    else:
+        x, y, w, h = net_qty.bbox
+        zone = (x - 2 * h, y - h, w + 4 * h, h + 2 * h)
+        intruders = [
+            t.text for t in tokens
+            if t.bbox and tuple(t.bbox) != tuple(net_qty.bbox) and _rects_intersect(zone, t.bbox)
+        ]
+        if intruders:
+            findings.append(DeclarationFinding(
+                id="placement_clear_space", label=clear_space_rule.label,
+                clause_ref=_clause_ref_for("placement_clear_space"),
+                status=Status.POTENTIAL_NON_COMPLIANCE,
+                note="text intrudes on the required clear space: " + ", ".join(intruders[:5]),
+            ))
+        else:
+            findings.append(DeclarationFinding(
+                id="placement_clear_space", label=clear_space_rule.label,
+                clause_ref=_clause_ref_for("placement_clear_space"),
+                status=Status.COMPLIANT,
+            ))
+
+    grouping_rule = catalog.placement_rule("placement_grouping")
+    findings.append(DeclarationFinding(
+        id="placement_grouping", label=grouping_rule.label,
+        clause_ref=_clause_ref_for("placement_grouping"),
+        status=Status.NOT_ASSESSABLE,
+        note="grouping of declarations on the principal display panel needs officer review",
+    ))
+    return findings
+
+
 def _to_calibration_schema(cal: CalibrationResult) -> Calibration:
     return Calibration(
         reference="aruco_card",
@@ -369,6 +429,8 @@ def run_scan(
     if marker_tokens:
         _attach_bboxes(fields, marker_tokens)
 
+    placement = _placement_findings(catalog, fields, marker_tokens)
+
     # 3. Metric font inputs (Rule 7). Prefer measuring the actual label text
     #    tokens on the calibrated image; fall back to field-bbox measurement.
     if cal.calibrated and marker_tokens:
@@ -428,6 +490,7 @@ def run_scan(
         extraction=extraction,
         summary=summary,
         declarations=declarations,
+        placement=placement,
         font_analysis=font_analysis,
         legal_basis={"statute": ", ".join(
             p for p in (catalog.statute.get("section"), catalog.statute.get("act"))

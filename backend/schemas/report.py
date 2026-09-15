@@ -237,6 +237,7 @@ class Report(BaseModel):
     extraction: Extraction = Field(default_factory=Extraction)
     summary: Summary = Field(default_factory=Summary)
     declarations: List[DeclarationFinding] = Field(default_factory=list)
+    placement: List[DeclarationFinding] = Field(default_factory=list)
     font_analysis: FontAnalysis = Field(default_factory=FontAnalysis)
     legal_basis: dict = Field(default_factory=dict)
     officer_actions: List[OfficerAction] = Field(default_factory=list)

@@ -152,8 +152,26 @@
 <p class="note">No letter-height measurement (no Metros card in frame, or uncalibrated).</p>
 {% endif %}
 
+{% if r.placement %}
+<h2 class="sec"><span>03</span>Placement · Rule 8</h2>
+<table>
+  <thead><tr><th style="width:34%">Item</th><th style="width:14%">Clause</th>
+    <th style="width:33%">Note</th><th style="width:19%">Status</th></tr></thead>
+  <tbody>
+  {% for p in r.placement %}
+    <tr>
+      <td>{{ p.label }}</td>
+      <td class="mono">{{ p.clause_ref.clause }}</td>
+      <td class="muted">{{ p.note or "" }}</td>
+      <td><span class="pill st-{{ p.status.value }}">{{ p.status.value.replace("_", " ") }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 {% if r.officer_actions %}
-<h2 class="sec"><span>03</span>Officer verification</h2>
+<h2 class="sec"><span>04</span>Officer verification</h2>
 <table>
   <thead><tr><th style="width:34%">Item</th><th style="width:20%">Decision</th>
     <th style="width:46%">Officer note</th></tr></thead>
@@ -171,7 +189,7 @@
 <p class="note">Finalized by <b>{{ r.finalized_by or "-" }}</b>
   {% if r.finalized_at %}on {{ r.finalized_at.strftime("%d %b %Y, %H:%M UTC") if r.finalized_at.strftime else r.finalized_at }}{% endif %}.</p>
 {% elif r.summary.required_actions %}
-<h2 class="sec"><span>03</span>Officer actions required</h2>
+<h2 class="sec"><span>04</span>Officer actions required</h2>
 <table>
   <tbody>
   {% for a in r.summary.required_actions %}
@@ -182,7 +200,7 @@
 <p class="note">Not yet verified by an officer.</p>
 {% endif %}
 
-<h2 class="sec"><span>04</span>Evidence &amp; legal basis</h2>
+<h2 class="sec"><span>05</span>Evidence &amp; legal basis</h2>
 <table class="evgrid">
   <tr><td class="muted">Original file</td><td>{{ r.evidence.original.file }}</td></tr>
   <tr><td class="muted">Resolution</td><td>{{ r.evidence.original.width }} × {{ r.evidence.original.height }} px</td></tr>

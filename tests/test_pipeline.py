@@ -228,6 +228,50 @@ def test_no_readable_text_needs_officer_review():
     assert any("could not be read" in w for w in report.extraction.warnings)
 
 
+# --- 2.6: Rule 8 placement and clear space ---
+
+def test_placement_clear_space_flags_intruding_text(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    qty_bbox = (600, 650, 60, 90)
+    intruder_bbox = (500, 650, 30, 20)  # inside the clear-space zone, outside qty's own box
+    text = "Net Qty 200 g\nBonus offer"
+    tokens = [
+        Token(text="Net Qty 200 g", bbox=qty_bbox, confidence=0.9),
+        Token(text="Bonus offer", bbox=intruder_bbox, confidence=0.9),
+    ]
+    report = run_scan(img, OcrResult(text=text, tokens=tokens), marker_mm=40.0)
+
+    clear_space = next(p for p in report.placement if p.id == "placement_clear_space")
+    assert clear_space.status == Status.POTENTIAL_NON_COMPLIANCE
+    assert "Bonus offer" in clear_space.note
+
+
+def test_placement_clear_space_passes_with_no_nearby_text(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    qty_bbox = (600, 650, 60, 90)
+    text = "Net Qty 200 g"
+    tokens = [Token(text="Net Qty 200 g", bbox=qty_bbox, confidence=0.9)]
+    report = run_scan(img, OcrResult(text=text, tokens=tokens), marker_mm=40.0)
+
+    clear_space = next(p for p in report.placement if p.id == "placement_clear_space")
+    assert clear_space.status == Status.COMPLIANT
+
+
+def test_placement_clear_space_not_assessable_without_bbox():
+    report = run_scan(np.full((300, 300, 3), 255, np.uint8),
+                      ocr_from_text("Net Qty 200 g"), extract_backend="regex")
+    clear_space = next(p for p in report.placement if p.id == "placement_clear_space")
+    assert clear_space.status == Status.NOT_ASSESSABLE
+
+
+def test_placement_grouping_always_routed_to_officer_review(scene_factory):
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    report = run_scan(img, ocr_from_text("Net Qty 200 g"), marker_mm=40.0)
+    grouping = next(p for p in report.placement if p.id == "placement_grouping")
+    assert grouping.status == Status.NOT_ASSESSABLE
+    assert "Rule 2(h)" in grouping.clause_ref.clause
+
+
 # --- 2.5: category-based applicability & exemptions ---
 
 def test_category_food_exempts_manufacturer_and_mfg_date(scene_factory):
