@@ -179,7 +179,7 @@ class Product(BaseModel):
     brand: Optional[str] = None
     category: Optional[str] = None
     batch: Optional[str] = None
-    source: Optional[str] = None          # "retail" | "e-commerce"
+    source: Optional[str] = None          # "retail_pack" | "ecommerce_listing"
     barcode_text: Optional[str] = None
 
 

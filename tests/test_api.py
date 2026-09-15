@@ -170,6 +170,40 @@ def test_scan_with_incomplete_panel_dimensions_is_rejected(client):
     assert r.status_code == 400
 
 
+def test_ecommerce_listing_accepts_text_only_input(client):
+    r = client.post(
+        "/scan",
+        data={"source": "ecommerce_listing",
+              "label_text": "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g\nMfg Aug 2026"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    mfg = next(d for d in body["declarations"] if d["id"] == "mfg_date")
+    assert mfg["status"] == "not_applicable"
+    assert body["font_analysis"]["items"] == []
+    assert body["placement"] == []
+
+
+def test_ecommerce_listing_accepts_a_single_screenshot(client):
+    r = client.post(
+        "/scan",
+        files=[("images", ("listing.png", _marker_png(), "image/png"))],
+        data={"source": "ecommerce_listing", "marker_mm": "40"},
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_ecommerce_listing_rejects_no_images_and_no_text(client):
+    r = client.post("/scan", data={"source": "ecommerce_listing"})
+    assert r.status_code == 400
+
+
+def test_invalid_source_rejected(client):
+    r = client.post("/scan", data={"source": "not-a-real-source",
+                                   "label_text": "MRP Rs. 45.00"})
+    assert r.status_code == 400
+
+
 def test_finalize_records_officer_actions(client):
     scan_id = client.post(
         "/scan",

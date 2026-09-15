@@ -58,6 +58,8 @@ function PanelDimensions({ shape, setShape, dims, setDims }) {
 
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
+  const [source, setSource] = useState("retail_pack"); // retail_pack | ecommerce_listing
+  const [labelText, setLabelText] = useState("");
   const [productName, setProductName] = useState("");
   const [brand, setBrand] = useState("");
   const [commonName, setCommonName] = useState("");
@@ -68,6 +70,7 @@ function ScanForm({ onReport }) {
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const isListing = source === "ecommerce_listing";
 
   function addFiles(fileList) {
     const arr = Array.from(fileList || []).filter(Boolean);
@@ -87,14 +90,19 @@ function ScanForm({ onReport }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (shots.length < 2)
+    if (isListing) {
+      if (shots.length === 0 && !labelText.trim())
+        return setErr("Add a screenshot or paste the listing text.");
+    } else if (shots.length < 2) {
       return setErr("Add at least two photos - front and back of the pack.");
+    }
     setBusy(true);
     setErr("");
     try {
       onReport(await scan({
         files: shots.map((s) => s.file), productName, brand, commonName, category,
-        panel: { shape: panelShape, ...panelDims },
+        source, labelText,
+        panel: isListing ? {} : { shape: panelShape, ...panelDims },
       }));
     } catch (e2) {
       setErr(String(e2.message || e2));
@@ -108,12 +116,24 @@ function ScanForm({ onReport }) {
       <div className="panel-head">
         <h2>Scan a packaged product</h2>
         <p className="lede">
-          Add the front and back of the pack, plus any close-ups of the label. More
-          photos means the reader finds more declarations. Include the printed Metros
-          card in a shot to also measure letter height (Rule 7) — lay the card flat
-          on the same face as the label, touching the text you want measured.
+          {isListing
+            ? "Add a screenshot of the online listing and/or paste its text. There is " +
+              "no letter-height or panel-placement check for a listing (Rule 7/8 need a " +
+              "physical pack); month/year of manufacture is not required either (Rule 6(10))."
+            : "Add the front and back of the pack, plus any close-ups of the label. More " +
+              "photos means the reader finds more declarations. Include the printed Metros " +
+              "card in a shot to also measure letter height (Rule 7) — lay the card flat " +
+              "on the same face as the label, touching the text you want measured."}
         </p>
       </div>
+
+      <label className="field">
+        <span>Scan type</span>
+        <select value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="retail_pack">Physical retail pack (photos)</option>
+          <option value="ecommerce_listing">E-commerce listing (screenshot / pasted text)</option>
+        </select>
+      </label>
 
       {/* Camera input: single + capture=environment => opens the REAR camera.
           (A `multiple` input makes browsers ignore `capture`, defaulting to the
@@ -139,6 +159,14 @@ function ScanForm({ onReport }) {
         </label>
       </div>
       <label htmlFor="galimg" className="gallery-link">or choose from gallery</label>
+
+      {isListing && (
+        <label className="field">
+          <span>Listing text {shots.length ? "(optional)" : ""}</span>
+          <textarea rows={5} value={labelText} placeholder="Paste the product listing text here…"
+            onChange={(e) => setLabelText(e.target.value)} />
+        </label>
+      )}
 
       <div className="grid2">
         <label className="field">
@@ -169,8 +197,10 @@ function ScanForm({ onReport }) {
         </select>
       </label>
 
-      <PanelDimensions shape={panelShape} setShape={setPanelShape}
-        dims={panelDims} setDims={setPanelDims} />
+      {!isListing && (
+        <PanelDimensions shape={panelShape} setShape={setPanelShape}
+          dims={panelDims} setDims={setPanelDims} />
+      )}
 
       <button className="cta" type="submit" disabled={busy}>
         {busy ? "Analysing…" : "Scan product"}

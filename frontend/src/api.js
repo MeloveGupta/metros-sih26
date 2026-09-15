@@ -40,13 +40,15 @@ export function logout() {
   setAuthToken(null);
 }
 
-export async function scan({ files, productName, brand, commonName, category, panel }) {
+export async function scan({ files, productName, brand, commonName, category, panel, source, labelText }) {
   const form = new FormData();
   for (const f of files) form.append("images", f);
   if (productName) form.append("product_name", productName);
   if (brand) form.append("brand", brand);
   if (commonName) form.append("common_name", commonName);
   if (category) form.append("category", category);
+  if (source) form.append("source", source);
+  if (labelText) form.append("label_text", labelText);
   if (panel && panel.shape) {
     form.append("panel_shape", panel.shape);
     if (panel.heightCm) form.append("panel_height_cm", panel.heightCm);

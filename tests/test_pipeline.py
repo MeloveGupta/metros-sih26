@@ -66,6 +66,26 @@ def test_save_crops_writes_a_crop_file_and_sets_evidence_crop(scene_factory, tmp
     assert crop_path.stat().st_size > 0
 
 
+def test_ecommerce_listing_skips_rule7_rule8_and_exempts_mfg_date(scene_factory):
+    text = "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g\nMfg Aug 2026"
+    blank = np.full((300, 300, 3), 255, np.uint8)
+
+    report = run_scan(blank, ocr_from_text(text), extract_backend="regex",
+                      skip_physical_measurement=True)
+
+    assert report.calibration.verdict == CalibrationVerdict.REJECTED
+    mfg = next(d for d in report.declarations if d.id == "mfg_date")
+    assert mfg.status == Status.NOT_APPLICABLE
+    assert "Rule 6(10)" in mfg.note
+    assert report.font_analysis.items == []
+    assert report.placement == []
+    assert any("Rule 7" in w and "Rule 8" in w for w in report.extraction.warnings)
+    # Summary must reflect the mfg_date override, not evaluate()'s pre-override
+    # counts (evaluate() itself would have called it not_detected/compliant).
+    assert report.summary.checked == len(report.declarations)  # font items excluded (empty)
+    assert report.summary.not_applicable >= 1
+
+
 def test_full_scan_uncalibrated_no_mm(scene_factory):
     # Blank-ish scene: no marker at all.
     import numpy as np

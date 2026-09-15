@@ -20,7 +20,7 @@ import numpy as np
 
 from .core.config import get_settings
 from .rules.catalog import RuleCatalog, load_catalog
-from .rules.engine import FieldExtraction, FontInputs, GlyphInput, evaluate
+from .rules.engine import FieldExtraction, FontInputs, GlyphInput, evaluate, summarize
 from .rules.panel import compute_panel_area_cm2
 from .extract.dispatch import extract_declarations
 from .schemas.report import (
@@ -532,6 +532,7 @@ def run_scan(
     report_id: Optional[str] = None,
     evidence_images: Optional[Sequence[EvidenceImageInput]] = None,
     save_crops: bool = False,
+    skip_physical_measurement: bool = False,
 ) -> Report:
     """Run the full pipeline over one or more images (e.g. front + back).
 
@@ -565,18 +566,27 @@ def run_scan(
     if not isinstance(ocrs, (list, tuple)):
         ocrs = [ocrs]
 
-    # 1. Scale: use the first image that yields a valid calibration.
-    cal = None
+    # 1. Scale: use the first image that yields a valid calibration. An
+    #    e-commerce listing screenshot has no physical calibration card, so
+    #    don't waste time looking for one (and don't risk a false positive
+    #    match against something in the screenshot).
     cal_idx = 0
-    for i, img in enumerate(images):
-        c = detect_scale(img, marker_mm=marker_mm, dict_name=dict_name,
-                         marker_id=marker_id,
-                         max_corner_jitter_px=settings.max_corner_jitter_px)
-        if c.calibrated:
-            cal, cal_idx = c, i
-            break
-        if cal is None:
-            cal = c  # remember an uncalibrated result as the fallback
+    if skip_physical_measurement:
+        cal = CalibrationResult(
+            found=False, dict_name=dict_name,
+            reason="not applicable: e-commerce listing scan (no physical pack to calibrate)",
+        )
+    else:
+        cal = None
+        for i, img in enumerate(images):
+            c = detect_scale(img, marker_mm=marker_mm, dict_name=dict_name,
+                             marker_id=marker_id,
+                             max_corner_jitter_px=settings.max_corner_jitter_px)
+            if c.calibrated:
+                cal, cal_idx = c, i
+                break
+            if cal is None:
+                cal = c  # remember an uncalibrated result as the fallback
     marker_image = images[cal_idx]
 
     # 2. Extraction over ALL images (vision) or combined OCR text (regex).
@@ -606,7 +616,9 @@ def run_scan(
     if marker_tokens:
         _attach_bboxes(fields, marker_tokens)
 
-    placement = _placement_findings(catalog, fields, marker_tokens)
+    # Rule 8 placement is a physical-panel layout check; it has nothing to
+    # measure on an e-commerce listing screenshot.
+    placement = [] if skip_physical_measurement else _placement_findings(catalog, fields, marker_tokens)
 
     # 3. Metric font inputs (Rule 7). Prefer measuring the actual label text
     #    tokens on the calibrated image; fall back to field-bbox measurement.
@@ -627,14 +639,39 @@ def run_scan(
         category=category,
     )
 
+    if skip_physical_measurement:
+        # Rule 6(10): an e-commerce entity need not display the month/year of
+        # manufacture on the digital listing (the physical pack itself must
+        # still carry it when delivered -- see the rule's own Explanation).
+        mfg = next((d for d in declarations if d.id == "mfg_date"), None)
+        if mfg is not None:
+            mfg.status = Status.NOT_APPLICABLE
+            mfg.note = ("not required on an e-commerce listing (Rule 6(10)); the "
+                        "physical pack delivered to the consumer must still carry it")
+        # Rule 7 letter height has no physical panel to measure here.
+        font_analysis.items = []
+        # Recompute the summary/counts against the overridden findings above --
+        # evaluate()'s own summary was built before these listing-mode changes.
+        summary = summarize(declarations, font_analysis)
+
     # Rule 9 readability: contrast (mrp/net_quantity only), image quality
     # (blur/glare -- gates not_detected -> not_assessable), language, stickers.
     # Contrast needs the SAME image the bboxes were measured on (marker_image);
     # image quality (blur/glare) is judged on the primary evidence image.
     _apply_contrast_checks(declarations, marker_image, molded, catalog)
-    extraction_warnings: List[str] = _apply_image_quality(declarations, images[0], catalog)
+    # Blur/glare are physical-photo artifacts; skip them for a listing, where
+    # the "image" may be a placeholder (text-only input) or a lossless
+    # screenshot that was never subject to camera focus/glare in the first place.
+    extraction_warnings: List[str] = (
+        [] if skip_physical_measurement else _apply_image_quality(declarations, images[0], catalog)
+    )
     readability = _readability_findings(catalog, combined_text)
 
+    if skip_physical_measurement:
+        extraction_warnings.append(
+            "letter height (Rule 7) and placement (Rule 8) are not assessed for an "
+            "e-commerce listing scan -- there is no physical pack to measure"
+        )
     if category is None or category == "unknown":
         extraction_warnings.append(
             "product category not specified; no food/cosmetic exemptions applied"

@@ -157,16 +157,17 @@ def _safe_filename(name: str) -> str:
 _DEFAULT_ROLES = ["front", "back"]
 
 
-def _save_uploads(report_id: str, files: List[UploadFile], raw: List[bytes]) -> List[EvidenceImageInput]:
+def _save_uploads(report_id: str, filenames: List[str], raw: List[bytes],
+                  roles: Optional[List[str]] = None) -> List[EvidenceImageInput]:
     """Persist the uploaded bytes as-is (not re-encoded pixels) and hash them."""
     out_dir = get_settings().uploads_dir / report_id
     out_dir.mkdir(parents=True, exist_ok=True)
     saved = []
-    for idx, (f, data) in enumerate(zip(files, raw)):
-        safe = _safe_filename(f.filename or f"image_{idx}.jpg")
+    for idx, (name, data) in enumerate(zip(filenames, raw)):
+        safe = _safe_filename(name or f"image_{idx}.jpg")
         rel = f"{report_id}/{idx}_{safe}"
         (out_dir / f"{idx}_{safe}").write_bytes(data)
-        role = _DEFAULT_ROLES[idx] if idx < len(_DEFAULT_ROLES) else "other"
+        role = roles[idx] if roles else (_DEFAULT_ROLES[idx] if idx < len(_DEFAULT_ROLES) else "other")
         saved.append(EvidenceImageInput(
             path=rel, sha256="sha256:" + hashlib.sha256(data).hexdigest(), role=role))
     return saved
@@ -188,7 +189,7 @@ def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
 
 @app.post("/scan")
 async def scan(
-    images: List[UploadFile] = File(...),
+    images: List[UploadFile] = File(default=[]),
     label_text: Optional[str] = Form(None),
     marker_mm: Optional[float] = Form(None),
     dict_name: str = Form("DICT_4X4_50"),
@@ -206,7 +207,20 @@ async def scan(
     session=Depends(get_session),
     current_user: CurrentUser = Depends(require_role("officer", "admin")),
 ):
-    if len(images) < 2:
+    if source is not None and source not in ("retail_pack", "ecommerce_listing"):
+        raise HTTPException(
+            status_code=400,
+            detail="source must be one of: retail_pack, ecommerce_listing",
+        )
+    is_listing = source == "ecommerce_listing"
+
+    if is_listing:
+        if not images and not (label_text and label_text.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="an e-commerce listing scan needs at least one screenshot or pasted listing text",
+            )
+    elif len(images) < 2:
         raise HTTPException(
             status_code=400,
             detail="upload both the front and back of the pack (two images)",
@@ -218,11 +232,23 @@ async def scan(
             detail="category must be one of: food, cosmetic, other_non_food, unknown",
         )
 
-    raw_bytes = [await f.read() for f in images]
-    decoded = [_decode_image(data) for data in raw_bytes]
+    if images:
+        raw_bytes = [await f.read() for f in images]
+        decoded = [_decode_image(data) for data in raw_bytes]
+        filenames = [f.filename or f"image_{i}.jpg" for i, f in enumerate(images)]
+        roles = None  # front/back/other, per _save_uploads' default
+    else:
+        # Text-only listing: no physical/digital screenshot at all. Keep a
+        # placeholder image so the pipeline's "at least one image" invariant
+        # holds; it is saved and hashed like any other evidence file.
+        blank = np.full((40, 40, 3), 255, np.uint8)
+        raw_bytes = [cv2.imencode(".png", blank)[1].tobytes()]
+        decoded = [blank]
+        filenames = ["listing-text-only.png"]
+        roles = ["listing"]
 
     report_id = str(uuid.uuid4())
-    evidence_images = _save_uploads(report_id, images, raw_bytes)
+    evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
     # OCR is only needed when the LLM vision path is NOT used (it reads images
     # directly). Skipping Tesseract when AI is on removes N slow OCR passes.
@@ -241,7 +267,7 @@ async def scan(
     try:
         report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                           product=product, inspection=inspection,
-                          image_file=images[0].filename or "upload.jpg",
+                          image_file=filenames[0],
                           extract_backend="regex" if llm is False else "auto",
                           label_text_provided=bool(label_text),
                           common_name=common_name,
@@ -251,7 +277,7 @@ async def scan(
                           panel_area_cm2_other=panel_area_cm2_other,
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,
-                          save_crops=True)
+                          save_crops=True, skip_physical_measurement=is_listing)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

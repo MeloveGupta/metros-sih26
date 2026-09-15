@@ -276,11 +276,11 @@ def evaluate(
             )
         )
 
-    summary = _summarize(findings, fa)
+    summary = summarize(findings, fa)
     return findings, fa, summary
 
 
-def _summarize(findings: List[DeclarationFinding], fa: FontAnalysis) -> Summary:
+def summarize(findings: List[DeclarationFinding], fa: FontAnalysis) -> Summary:
     s = Summary()
     all_status = [f.status for f in findings] + [i.status for i in fa.items]
     s.checked = len(all_status)
