@@ -196,7 +196,7 @@ capture (product + ArUco marker)
 | Language | Python (one language across CV + rules + API) |
 | Scale / mm | OpenCV `cv2.aruco` |
 | OCR + char boxes | PaddleOCR (offline, free) |
-| Field parsing | regex + spaCy NER (optional Gemini fast-path) |
+| Field parsing | Claude (Anthropic API) default; regex fallback |
 | Rule engine | Python + YAML catalog (`rules/lmpc-2011.yaml`) |
 | API | FastAPI |
 | DB / storage | PostgreSQL + MinIO |

@@ -46,8 +46,8 @@
 [vision.measure]   glyph_px × mm_per_pixel  →  glyph_mm   →  Rule 7 font check
     │
     ▼
-[extract]          text  →  fields (MRP, net qty, mfg date, care info)
-    │                        regex + spaCy NER  (Gemini optional fast-path)
+[extract]          text/images  →  fields (MRP, net qty, mfg date, care info)
+    │                        Claude (default) or regex fallback
     ▼
 [rules.engine]     fields + measurements  →  verdict per clause + evidence crop
     │
@@ -64,7 +64,7 @@
 |---------|--------|--------|
 | Scale recovery | OpenCV `cv2.aruco` | known-size marker → exact mm, deterministic |
 | OCR + char boxes | PaddleOCR | offline, free, per-character boxes |
-| Field parsing | regex + spaCy NER; Gemini optional | offline default, LLM swappable |
+| Field parsing | Claude (Anthropic API) default; regex fallback | AI reader by default, deterministic fallback when unavailable |
 | Rule engine | plain Python + YAML catalog | deterministic, clause-cited, no-redeploy edits |
 | API | FastAPI | async, Python (one language with CV), free OpenAPI |
 | DB | PostgreSQL | records, history, search |

@@ -39,7 +39,7 @@ SQLAlchemy>=2.0
 pyjwt>=2.10
 bcrypt>=4.2
 
-# --- Optional LLM extraction fast-path (auth via `ant auth login`, no key) ---
+# --- Optional LLM extraction fast-path (auth via ANTHROPIC_API_KEY) ---
 # anthropic>=0.69
 
 # --- Dev / test ---

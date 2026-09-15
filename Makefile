@@ -7,7 +7,7 @@ BIN := $(VENV)/bin
 help:
 	@echo "make install        create venv and install core backend deps"
 	@echo "make install-ocr    add PaddleOCR (optional; Python 3.12 recommended)"
-	@echo "make install-llm    add the Claude extractor (optional; ant auth login)"
+	@echo "make install-llm    add the Claude extractor (optional; set ANTHROPIC_API_KEY)"
 	@echo "make test           run the backend test suite"
 	@echo "make seed           create default users in the database"
 	@echo "make card           generate the printable ArUco calibration card"

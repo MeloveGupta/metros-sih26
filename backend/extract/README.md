@@ -1,5 +1,6 @@
 # extract
 
 OCR text -> structured declaration fields (MRP, net quantity, mfg date,
-manufacturer, consumer-care). regex + spaCy NER offline; optional Gemini
-fast-path when GEMINI_API_KEY is set. Extraction only — never verdicts.
+manufacturer, consumer-care). Claude (Anthropic API) is the default reader
+when `ANTHROPIC_API_KEY` is set; deterministic regex parsers are the fallback
+when no key is set or a Claude call fails. Extraction only — never verdicts.

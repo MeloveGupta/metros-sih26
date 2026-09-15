@@ -1,10 +1,10 @@
-"""Offline extraction of Rule 6 declarations from OCR text.
+"""Deterministic regex extraction of Rule 6 declarations from OCR text.
 
-Deterministic regex/keyword parsers, no network. Each parser reports whether the
-declaration was detected, the captured value, and (where the rule prescribes a
-format) whether the format matches. An optional Gemini fast-path can be layered
-on top later; the offline path here is always the default so the tool runs with
-no API key.
+No network. Each parser reports whether the declaration was detected, the
+captured value, and (where the rule prescribes a format) whether the format
+matches. This is the fallback path used when the Claude reader
+(`extract.llm`) is unavailable or fails; it always runs, so the tool works
+with no API key.
 
 Extraction never decides compliance — it only reports what was detected and
 whether the format matches. The rule engine turns that into a status.

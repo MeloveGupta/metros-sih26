@@ -1,15 +1,13 @@
 """Optional LLM field-extraction fast-path (Anthropic Claude).
 
-Auth by login, not API keys: this builds a zero-argument `Anthropic()` client,
-which resolves credentials from an `ant auth login` OAuth profile (falling back
-to ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY only if those happen to be set). Run
-`ant auth login` once; no key is stored in this repo or its environment.
+Auth is by API key only: set `ANTHROPIC_API_KEY` (from the Claude Console) in
+the environment or `.env`. No other credential source is used.
 
 Scope guardrail: the LLM only *extracts* declarations (text -> structured
 fields). It never decides compliance and never estimates millimetres — those stay
-with the deterministic engine and the ArUco geometry. If the SDK or credentials
-are missing, `llm_available()` returns False and callers fall back to the offline
-regex parsers.
+with the deterministic engine and the ArUco geometry. If the SDK or the key are
+missing, `llm_available()` returns False and callers fall back to Tesseract OCR
++ the offline regex parsers.
 """
 from __future__ import annotations
 
@@ -68,15 +66,15 @@ _RESPONSE_SCHEMA = {
 
 
 def _has_credentials() -> bool:
-    return bool(os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
 def _client():
-    """Anthropic client using whatever credential is present.
+    """Anthropic client authenticated with `ANTHROPIC_API_KEY` only.
 
-    ANTHROPIC_AUTH_TOKEN (an OAuth bearer token) is used with the oauth beta
-    header; otherwise ANTHROPIC_API_KEY; otherwise a bare client (resolves an
-    `ant auth login` profile if one exists). Raises ExtractionError if unusable.
+    Raises ExtractionError if the SDK is missing or the key is unset/invalid
+    at construction time (a rejected key only surfaces later, on the actual
+    API call -- see `dispatch.extract_declarations`'s OCR fallback).
     """
     try:
         import anthropic
@@ -86,21 +84,14 @@ def _client():
             f"Underlying error: {exc}"
         ) from exc
 
-    token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise ExtractionError("ANTHROPIC_API_KEY is not set.")
     try:
-        if token:
-            return anthropic.Anthropic(
-                auth_token=token,
-                default_headers={"anthropic-beta": "oauth-2025-04-20"},
-            )
-        if key:
-            return anthropic.Anthropic(api_key=key)
-        return anthropic.Anthropic()
+        return anthropic.Anthropic(api_key=key)
     except Exception as exc:
         raise ExtractionError(
-            "Could not construct the Anthropic client. Set ANTHROPIC_AUTH_TOKEN "
-            f"or ANTHROPIC_API_KEY. Underlying error: {exc}"
+            f"Could not construct the Anthropic client. Underlying error: {exc}"
         ) from exc
 
 

@@ -54,9 +54,9 @@ make frontend-dev       # React app on http://localhost:5173
 
 **OCR is optional and not in core deps** (PaddleOCR has no wheels on newer
 Python). Read label text three ways:
+- `make install-llm` + `ANTHROPIC_API_KEY` in `.env` — the AI reader (default when a key is set);
 - paste it (`--label-text` / the UI's label field) — works everywhere, no extra install;
-- `make install-llm` + `ant auth login` — Claude extractor, no API key;
-- `make install-ocr` — on-device PaddleOCR (needs Python ≈3.12; use a separate venv).
+- `make install-ocr` — Tesseract OCR fallback (used automatically when no key is set or the API call fails).
 
 Offline single scan without the server:
 
