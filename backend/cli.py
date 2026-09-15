@@ -54,6 +54,17 @@ def _print_summary(report) -> None:
             print(f"    - {a}")
 
 
+def _parse_polygon_px(raw: Optional[str]):
+    """Parse "x1,y1;x2,y2;x3,y3;x4,y4" into a list of (float, float) points."""
+    if not raw:
+        return None
+    points = []
+    for pair in raw.split(";"):
+        x, y = pair.split(",")
+        points.append((float(x), float(y)))
+    return points
+
+
 def _cmd_scan(args: argparse.Namespace) -> int:
     image = cv2.imread(args.image)
     if image is None:
@@ -83,6 +94,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         dict_name=args.dict,
         product=Product(name=args.product) if args.product else None,
         panel_area_cm2=args.panel_cm2,
+        panel_polygon_px=_parse_polygon_px(args.panel_polygon_px),
         molded=args.molded,
         image_file=Path(args.image).name,
         extract_backend="auto" if args.llm else "regex",
@@ -115,6 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--dict", default="DICT_4X4_50", help="ArUco dictionary")
     scan.add_argument("--panel-cm2", type=float, default=None,
                       help="principal display panel area (cm^2) for Rule 7 band")
+    scan.add_argument("--panel-polygon-px", default=None,
+                      help='panel pixel polygon "x1,y1;x2,y2;x3,y3;x4,y4" '
+                           "measured through the calibration (overrides --panel-cm2)")
     scan.add_argument("--molded", action="store_true",
                       help="declarations are blown/molded (higher thresholds)")
     scan.add_argument("--llm", action="store_true",

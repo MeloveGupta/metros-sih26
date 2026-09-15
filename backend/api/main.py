@@ -99,6 +99,11 @@ async def scan(
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     common_name: Optional[str] = Form(None),
+    panel_shape: Optional[str] = Form(None),
+    panel_height_cm: Optional[float] = Form(None),
+    panel_width_cm: Optional[float] = Form(None),
+    panel_circumference_cm: Optional[float] = Form(None),
+    panel_area_cm2_other: Optional[float] = Form(None),
     llm: bool = Form(True),
     session=Depends(get_session),
 ):
@@ -125,12 +130,19 @@ async def scan(
     product = Product(name=product_name, brand=brand, category=category, source=source)
     inspection = Inspection(officer=Officer(id=user["sub"], name=user["sub"],
                                             role=user["role"]))
-    report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
-                      product=product, inspection=inspection,
-                      image_file=images[0].filename or "upload.jpg",
-                      extract_backend="regex" if llm is False else "auto",
-                      label_text_provided=bool(label_text),
-                      common_name=common_name)
+    try:
+        report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
+                          product=product, inspection=inspection,
+                          image_file=images[0].filename or "upload.jpg",
+                          extract_backend="regex" if llm is False else "auto",
+                          label_text_provided=bool(label_text),
+                          common_name=common_name,
+                          panel_shape=panel_shape, panel_height_cm=panel_height_cm,
+                          panel_width_cm=panel_width_cm,
+                          panel_circumference_cm=panel_circumference_cm,
+                          panel_area_cm2_other=panel_area_cm2_other)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     save_report(session, report, created_by=user["sub"])
     append_audit(session, action="scan", user_id=user["sub"], target=report.report_id)

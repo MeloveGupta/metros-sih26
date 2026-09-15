@@ -97,8 +97,20 @@ class FontItem(BaseModel):
     reason: Optional[str] = None
 
 
+class PanelInput(BaseModel):
+    """How the panel area was derived (Rule 7(4), as substituted by GSR 629(E))."""
+
+    shape: Optional[str] = None  # "rectangular" | "cylindrical" | "other"
+    height_cm: Optional[float] = None
+    width_cm: Optional[float] = None
+    circumference_cm: Optional[float] = None
+    area_cm2_other: Optional[float] = None
+    clause: str = "Rule 7(4)"
+
+
 class FontAnalysis(BaseModel):
     panel_area_cm2: Optional[Measurement] = None
+    panel_input: Optional[PanelInput] = None
     table_i_band: Optional[TableIBand] = None
     items: List[FontItem] = Field(default_factory=list)
 

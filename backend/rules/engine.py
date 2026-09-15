@@ -17,6 +17,7 @@ from ..schemas.report import (
     FontItem,
     FormatCheck,
     Measurement,
+    PanelInput,
     Status,
     Summary,
     TableIBand,
@@ -61,6 +62,7 @@ class GlyphInput:
 @dataclass
 class FontInputs:
     panel_area_cm2: Optional[MmMeasurement] = None
+    panel_input: Optional[PanelInput] = None
     items: List[GlyphInput] = field(default_factory=list)
 
 
@@ -176,6 +178,7 @@ def evaluate(
     abs_floor_molded = float(catalog.font_absolute.get("min_height_mm_molded", 2.0))
 
     band = None
+    fa.panel_input = font.panel_input
     if calibrated and font.panel_area_cm2 is not None:
         band = catalog.select_band(font.panel_area_cm2.value)
         fa.panel_area_cm2 = Measurement(

@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from backend.rules.catalog import load_catalog
+from backend.rules.panel import compute_panel_area_cm2
 from backend.rules.engine import (
     FieldExtraction,
     FontInputs,
@@ -112,3 +113,21 @@ def test_engine_is_deterministic(catalog):
     out1 = evaluate(catalog, fields, FontInputs(), calibrated=True)
     out2 = evaluate(catalog, fields, FontInputs(), calibrated=True)
     assert [d.status for d in out1[0]] == [d.status for d in out2[0]]
+
+
+def test_compute_panel_area_rectangular():
+    assert compute_panel_area_cm2("rectangular", height_cm=20, width_cm=30) == 600.0
+
+
+def test_compute_panel_area_cylindrical():
+    assert compute_panel_area_cm2("cylindrical", height_cm=10, circumference_cm=31.4) == \
+        pytest.approx(125.6)
+
+
+def test_compute_panel_area_other_uses_officer_value():
+    assert compute_panel_area_cm2("other", area_cm2_other=75.0) == 75.0
+
+
+def test_compute_panel_area_missing_dims_raises():
+    with pytest.raises(ValueError):
+        compute_panel_area_cm2("rectangular", height_cm=20)

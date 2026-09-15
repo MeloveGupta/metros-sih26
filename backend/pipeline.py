@@ -18,6 +18,7 @@ import numpy as np
 from .core.config import get_settings
 from .rules.catalog import RuleCatalog, load_catalog
 from .rules.engine import FieldExtraction, FontInputs, GlyphInput, evaluate
+from .rules.panel import compute_panel_area_cm2
 from .extract.dispatch import extract_declarations
 from .schemas.report import (
     Calibration,
@@ -27,6 +28,7 @@ from .schemas.report import (
     Extraction,
     Inspection,
     OriginalImage,
+    PanelInput,
     Product,
     Report,
     RuleCatalogInfo,
@@ -154,7 +156,8 @@ def _token_intersects_card(bbox, card_poly_px: Optional[np.ndarray]) -> bool:
 
 def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
                       panel_area_cm2_known: Optional[float] = None,
-                      fields: Optional[List[FieldExtraction]] = None) -> FontInputs:
+                      fields: Optional[List[FieldExtraction]] = None,
+                      panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None) -> FontInputs:
     """Measure letter height directly from OCR text tokens (Rule 7).
 
     Rule 7 is about the MINIMUM letter height on the PRODUCT panel, so tokens
@@ -169,6 +172,16 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
     import re
     mean_side = _mean_side_px(cal)
     card_poly_px = _card_polygon_px(cal)
+
+    # Panel area is computed up front so the Table-I band is still reported
+    # even when no glyph token survives the filters below.
+    area = None
+    if panel_polygon_px is not None:
+        area = panel_area_cm2(cal.H_img_to_mm, panel_polygon_px, cal.marker_mm,
+                              mean_side, cal.corner_jitter_px)
+    elif panel_area_cm2_known is not None:
+        area = MmMeasurement(round(panel_area_cm2_known, 3),
+                             round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
 
     decl_bbox_ids = {}
     for f in (fields or []):
@@ -203,17 +216,13 @@ def _font_from_tokens(cal: CalibrationResult, tokens, molded: bool,
         decl_id = decl_bbox_ids.get(tuple(t.bbox))
         measured.append((hmm, ratio, txt, has_digit, decl_id))
     if not measured:
-        return FontInputs()
+        return FontInputs(panel_area_cm2=area)
     # Prefer tokens already matched to an extracted declaration (definitely
     # product text) over other digit-bearing text, over marketing words.
     decl_tokens = [m for m in measured if m[4] is not None]
     digit_tokens = [m for m in measured if m[3]]
     ranked = decl_tokens or digit_tokens or measured
     ranked.sort(key=lambda m: m[0].value)
-    area = None
-    if panel_area_cm2_known is not None:
-        area = MmMeasurement(round(panel_area_cm2_known, 3),
-                             round(panel_area_cm2_known * 0.02, 3), unit="cm^2")
     items = [
         GlyphInput(decl_id if decl_id is not None else f'"{txt[:18]}"',
                   height=hmm, width_ratio=ratio, molded=molded)
@@ -257,6 +266,11 @@ def run_scan(
     inspection: Optional[Inspection] = None,
     panel_polygon_px: Optional[Sequence[Tuple[float, float]]] = None,
     panel_area_cm2: Optional[float] = None,
+    panel_shape: Optional[str] = None,
+    panel_height_cm: Optional[float] = None,
+    panel_width_cm: Optional[float] = None,
+    panel_circumference_cm: Optional[float] = None,
+    panel_area_cm2_other: Optional[float] = None,
     molded: bool = False,
     image_file: str = "upload.jpg",
     captured_at: Optional[datetime] = None,
@@ -270,10 +284,27 @@ def run_scan(
     `images`/`ocrs` accept a single item or a list. The calibration card is
     optional: measurement (Rule 7) runs on whichever image contains a marker; if
     none do, Rule 7 is reported not_assessable and Rule 6 is still assessed.
+
+    The principal-display-panel area for the Rule 7 Table-I band comes from
+    either a pre-computed `panel_area_cm2`, a pixel `panel_polygon_px`
+    (measured through the calibration), or officer-entered dimensions
+    (`panel_shape` + the matching `panel_*_cm` fields, Rule 7(4)).
     """
     settings = get_settings()
     marker_mm = marker_mm if marker_mm is not None else settings.marker_size_mm
     catalog = catalog or load_catalog()
+
+    panel_input = None
+    if panel_shape is not None:
+        panel_input = PanelInput(
+            shape=panel_shape, height_cm=panel_height_cm, width_cm=panel_width_cm,
+            circumference_cm=panel_circumference_cm, area_cm2_other=panel_area_cm2_other,
+        )
+        if panel_area_cm2 is None and panel_polygon_px is None:
+            panel_area_cm2 = compute_panel_area_cm2(
+                panel_shape, height_cm=panel_height_cm, width_cm=panel_width_cm,
+                circumference_cm=panel_circumference_cm, area_cm2_other=panel_area_cm2_other,
+            )
 
     if not isinstance(images, (list, tuple)):
         images = [images]
@@ -326,10 +357,11 @@ def run_scan(
     if cal.calibrated and marker_tokens:
         font_inputs = _font_from_tokens(cal, marker_tokens, molded,
                                         panel_area_cm2_known=panel_area_cm2,
-                                        fields=fields)
+                                        fields=fields, panel_polygon_px=panel_polygon_px)
     else:
         font_inputs = _build_font_inputs(cal, fields, panel_polygon_px, molded,
                                          panel_area_cm2_known=panel_area_cm2)
+    font_inputs.panel_input = panel_input
 
     # 4. Deterministic evaluation.
     declarations, font_analysis, summary = evaluate(

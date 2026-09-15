@@ -94,7 +94,7 @@ p { text-wrap: pretty; }
 .field { display: block; margin: 16px 0 0; }
 .field > span { display: block; font-size: var(--t-label); font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; margin-bottom: 6px; }
-input, textarea {
+input, textarea, select {
   width: 100%; padding: 11px 12px; font: inherit; font-weight: 500;
   border: var(--bd) solid var(--ink); border-radius: 0; background: var(--card);
   color: var(--ink);

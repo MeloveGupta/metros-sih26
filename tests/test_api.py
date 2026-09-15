@@ -97,6 +97,40 @@ def test_single_image_rejected(client):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize("shape,dims,expected_area,expected_min_height", [
+    ("rectangular", {"panel_height_cm": "20", "panel_width_cm": "30"}, 600.0, 4.0),
+    ("cylindrical", {"panel_height_cm": "10", "panel_circumference_cm": "31.4"}, 125.6, 2.5),
+    ("other", {"panel_area_cm2_other": "75"}, 75.0, 1.5),
+])
+def test_scan_with_panel_dimensions_selects_table_i_band(
+    client, shape, dims, expected_area, expected_min_height,
+):
+    data = {"label_text": "MRP Rs. 45.00 (incl. of all taxes)", "marker_mm": "40",
+            "panel_shape": shape, **dims}
+    r = client.post(
+        "/scan",
+        files=[("images", ("front.png", _marker_png(), "image/png")),
+               ("images", ("back.png", _marker_png(), "image/png"))],
+        data=data,
+    )
+    assert r.status_code == 200, r.text
+    fa = r.json()["font_analysis"]
+    assert fa["panel_area_cm2"]["value"] == pytest.approx(expected_area)
+    assert fa["table_i_band"]["min_height_mm"] == pytest.approx(expected_min_height)
+    assert fa["panel_input"]["shape"] == shape
+    assert fa["panel_input"]["clause"] == "Rule 7(4)"
+
+
+def test_scan_with_incomplete_panel_dimensions_is_rejected(client):
+    r = client.post(
+        "/scan",
+        files=[("images", ("front.png", _marker_png(), "image/png")),
+               ("images", ("back.png", _marker_png(), "image/png"))],
+        data={"marker_mm": "40", "panel_shape": "rectangular", "panel_height_cm": "20"},
+    )
+    assert r.status_code == 400
+
+
 def test_finalize_records_officer_actions(client):
     scan_id = client.post(
         "/scan",
