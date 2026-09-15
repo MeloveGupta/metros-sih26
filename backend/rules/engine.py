@@ -37,6 +37,10 @@ class FieldExtraction:
     ocr_confidence: Optional[float] = None
     format_pass: Optional[bool] = None
     format_pattern: Optional[str] = None
+    # Specific explanation for a format failure (e.g. which parts of a
+    # multi-part declaration are missing). Falls back to a generic message
+    # when unset.
+    format_detail: Optional[str] = None
     applicable: bool = True
     # True when detection alone isn't enough to trust the value (e.g. an
     # unconfirmed generic name from the regex fallback, or an LLM value that
@@ -83,7 +87,7 @@ def _declaration_status(f: FieldExtraction) -> Tuple[Status, Optional[str]]:
     if f.format_pass is False:
         return (
             Status.POTENTIAL_NON_COMPLIANCE,
-            "detected but does not match the prescribed format; verify",
+            f.format_detail or "detected but does not match the prescribed format; verify",
         )
     return Status.COMPLIANT, None
 

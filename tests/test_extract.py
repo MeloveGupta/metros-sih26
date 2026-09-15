@@ -4,6 +4,8 @@ from __future__ import annotations
 from backend.extract.fields import (
     extract_fields,
     parse_common_name,
+    parse_consumer_care,
+    parse_manufacturer,
     parse_mrp,
     parse_net_quantity,
 )
@@ -15,7 +17,7 @@ Manufactured by: FoodCo Pvt Ltd, Plot 12, Pune, Maharashtra 411001
 Net Qty: 90 g
 MRP Rs. 45.00 (incl. of all taxes)
 Mfg: Aug 2026
-Consumer care: care@foodco.in, 1800-123-4567
+Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567
 """
 
 
@@ -80,3 +82,58 @@ def test_common_name_without_hint_needs_confirmation():
     assert f.present is False
     assert f.needs_confirmation is True
     assert f.confirmation_reason == "generic name needs officer confirmation"
+
+
+# --- 1.6: regex false positives / false passes ---
+
+def test_net_quantity_ignores_nutrition_facts_figure():
+    """"Protein 12 g per serving" must never be read as the net-quantity
+    declaration -- it's a nutrition-facts figure, not Rule 6(1)(c)."""
+    text = "Nutrition Facts\nProtein 12 g per serving\nFat 5 g\nEnergy 250 kcal"
+    f = parse_net_quantity(text)
+    assert f.present is False
+
+
+def test_net_quantity_uncued_number_is_low_confidence_candidate():
+    text = "Contains 250 g of real fruit"  # a number+unit, but no net-qty cue
+    f = parse_net_quantity(text)
+    assert f.present is True
+    assert f.format_pass is False
+    assert "no net-quantity cue" in f.format_detail
+
+
+def test_consumer_care_phone_only_fails_and_lists_missing_parts():
+    text = "Consumer care: 1800-123-4567"
+    f = parse_consumer_care(text)
+    assert f.present is True
+    assert f.format_pass is False
+    assert "name/address" in f.format_detail
+    assert "e-mail" in f.format_detail
+    assert "telephone" not in f.format_detail  # phone WAS given
+
+
+def test_manufacturer_pin_scoped_to_manufacturer_block():
+    """A PIN code in a distant consumer-care block must not make an
+    address-less manufacturer line look compliant."""
+    text = (
+        "Manufactured by: FoodCo Pvt Ltd, Pune\n"
+        + ("filler line to push the PIN below out of the manufacturer window\n" * 10)
+        + "Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567"
+    )
+    f = parse_manufacturer(text)
+    assert f.present is True
+    assert f.format_pass is False
+    assert "no PIN code" in f.format_detail
+
+
+def test_mrp_incl_taxes_scoped_to_mrp_line():
+    """"inclusive of all taxes" printed far from the MRP figure must not make
+    the MRP declaration pass."""
+    text = (
+        "MRP Rs. 45.00\n"
+        + ("some unrelated marketing copy on the pack\n" * 10)
+        + "All our products are sold inclusive of all taxes as a company policy."
+    )
+    f = parse_mrp(text)
+    assert f.present is True
+    assert f.format_pass is False

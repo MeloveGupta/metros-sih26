@@ -32,8 +32,15 @@ _MRP_CUE = re.compile(r"\b(m\.?r\.?p\.?|maximum\s+retail\s+price|max\.?\s+retail
                       re.IGNORECASE)
 _MRP_INCL = re.compile(r"incl(?:usive|\.)?\s+of\s+all\s+taxes", re.IGNORECASE)
 
-_NET_QTY = re.compile(
-    r"\b(?:net\s*(?:qty|quantity|wt|weight)\s*[:\-]?\s*)?"
+_NET_QTY_CUE = re.compile(
+    r"\bnet\s*(?:qty|quantity|wt|weight|contents?|vol|volume)\b|\bn\.?w\.?\b|\bnet\b",
+    re.IGNORECASE,
+)
+_NUTRITION_WORDS = re.compile(
+    r"\b(protein|fat|carbohydrates?|energy|sugars?|sodium|per\s*serving|per\s*100)\b",
+    re.IGNORECASE,
+)
+_QTY_NUM = re.compile(
     r"([0-9][0-9.,]*)\s*(kg|g|gm|gms|grams?|mg|l|ltr|litres?|ml|nos?|n|pcs?|pieces?|units?|u)\b",
     re.IGNORECASE,
 )
@@ -60,14 +67,65 @@ def _first_line(text: str, start: int) -> str:
     return text[start:(end if end != -1 else len(text))].strip()
 
 
+def _window(text: str, start: int, max_chars: int = 200, max_lines: int = 5) -> str:
+    """The declaration "block" following a cue: a few lines, capped in chars.
+
+    Scoping format checks (PIN code, contact info, tax wording) to this window
+    -- instead of the whole document -- stops an unrelated PIN/phone elsewhere
+    on the label from making a different declaration look compliant.
+    """
+    chunk = text[start:start + max_chars]
+    return "\n".join(chunk.splitlines()[:max_lines])
+
+
+# --- shared, pure format validators (used by both the regex parsers below and
+# the LLM-value validation path) ---
+
+def validate_manufacturer(window: str) -> tuple[bool, str]:
+    if _PIN.search(window):
+        return True, "PIN code present"
+    return False, "no PIN code found near the manufacturer/packer name"
+
+
+def validate_mrp(window: str) -> tuple[bool, str]:
+    has_amount = bool(_MRP_AMOUNT.search(window))
+    has_incl = bool(_MRP_INCL.search(window))
+    if has_amount and has_incl:
+        return True, "amount + 'inclusive of all taxes' present"
+    missing = [n for ok, n in ((has_amount, "an amount"), (has_incl, "'inclusive of all taxes'")) if not ok]
+    return False, "missing near the MRP: " + " and ".join(missing)
+
+
+def validate_net_quantity(window: str) -> tuple[bool, str]:
+    if _NUTRITION_WORDS.search(window):
+        return False, "looks like a nutrition-facts figure, not the net-quantity declaration"
+    if not _QTY_NUM.search(window):
+        return False, "no number + standard unit found"
+    if not _NET_QTY_CUE.search(window):
+        return False, "number + unit found, but no net-quantity cue (Net Qty/Net Wt/...) nearby; verify"
+    return True, "net-qty cue + number + standard unit present"
+
+
+def validate_consumer_care(window: str) -> tuple[bool, str]:
+    has_email = bool(_EMAIL.search(window))
+    has_phone = bool(_PHONE.search(window))
+    residual = _CARE_CUE.sub(" ", _PHONE.sub(" ", _EMAIL.sub(" ", window)))
+    has_name_address = len(re.findall(r"[A-Za-z]", residual)) >= 10
+    missing = [n for ok, n in ((has_name_address, "name/address"), (has_phone, "telephone"),
+                               (has_email, "e-mail")) if not ok]
+    if missing:
+        return False, "consumer-care block is missing: " + ", ".join(missing)
+    return True, "name/address + telephone + e-mail present"
+
+
 def parse_manufacturer(text: str) -> FieldExtraction:
     m = _MFR_CUE.search(text)
-    present = m is not None
-    value = _first_line(text, m.start()) if m else None
-    has_address = bool(_PIN.search(text))  # a PIN code strongly implies an address
+    if not m:
+        return FieldExtraction(id="manufacturer", present=False)
+    ok, detail = validate_manufacturer(_window(text, m.start()))
     return FieldExtraction(
-        id="manufacturer", present=present, value=value,
-        format_pass=(has_address if present else None),
+        id="manufacturer", present=True, value=_first_line(text, m.start()),
+        format_pass=ok, format_detail=None if ok else detail,
         format_pattern="name + address (PIN code expected)",
     )
 
@@ -95,13 +153,32 @@ def parse_common_name(text: str, hint: Optional[str] = None) -> FieldExtraction:
 
 
 def parse_net_quantity(text: str) -> FieldExtraction:
-    m = _NET_QTY.search(text)
-    return FieldExtraction(
-        id="net_quantity", present=m is not None,
-        value=m.group(0).strip() if m else None,
-        format_pass=(m is not None),
-        format_pattern="number + standard unit (g/kg/ml/l/N)",
-    )
+    """Require a net-quantity cue near the number; nutrition-facts lines never
+    count (e.g. "Protein 12 g per serving" is not a net-quantity declaration).
+    An uncued number+unit is recorded only as a low-confidence, format-failed
+    candidate, never a pass."""
+    candidate: Optional[FieldExtraction] = None
+    for line in text.splitlines():
+        if _NUTRITION_WORDS.search(line):
+            continue
+        m = _QTY_NUM.search(line)
+        if not m:
+            continue
+        if _NET_QTY_CUE.search(line):
+            return FieldExtraction(
+                id="net_quantity", present=True, value=m.group(0).strip(),
+                format_pass=True, format_pattern="net-qty cue + number + standard unit",
+            )
+        if candidate is None:
+            candidate = FieldExtraction(
+                id="net_quantity", present=True, value=m.group(0).strip(),
+                format_pass=False,
+                format_detail="number + unit found, but no net-quantity cue nearby; verify",
+                format_pattern="net-qty cue + number + standard unit",
+            )
+    if candidate is not None:
+        return candidate
+    return FieldExtraction(id="net_quantity", present=False)
 
 
 def parse_mfg_date(text: str) -> FieldExtraction:
@@ -136,11 +213,15 @@ def parse_mrp(text: str) -> FieldExtraction:
     present = bool(cue or amount)
     if not present:
         return FieldExtraction(id="mrp", present=False)
-    value = _first_line(text, (cue or amount).start())
-    # Format per Rule 6(1)(e): MRP + amount + "inclusive of all taxes".
-    fmt_ok = bool(cue and amount and _MRP_INCL.search(text))
+    anchor = (cue or amount).start()
+    value = _first_line(text, anchor)
+    # Format per Rule 6(1)(e): MRP + amount + "inclusive of all taxes", scoped
+    # to the MRP's own line/window (not the whole document).
+    ok, detail = validate_mrp(_window(text, anchor, max_chars=150))
+    fmt_ok = bool(cue and amount) and ok
     return FieldExtraction(
         id="mrp", present=True, value=value, format_pass=fmt_ok,
+        format_detail=None if fmt_ok else detail,
         format_pattern="MRP ₹ x.xx (incl. of all taxes)",
     )
 
@@ -149,11 +230,11 @@ def parse_consumer_care(text: str) -> FieldExtraction:
     m = _CARE_CUE.search(text)
     if not m:
         return FieldExtraction(id="consumer_care", present=False)
-    window = text[m.start(): m.start() + 200]
-    has_contact = bool(_EMAIL.search(window) or _PHONE.search(window))
+    ok, detail = validate_consumer_care(_window(text, m.start(), max_chars=300, max_lines=5))
     return FieldExtraction(
         id="consumer_care", present=True, value=_first_line(text, m.start()),
-        format_pass=has_contact, format_pattern="name/address + phone or email",
+        format_pass=ok, format_detail=None if ok else detail,
+        format_pattern="name, address, telephone and e-mail (Rule 6(2))",
     )
 
 
