@@ -147,38 +147,24 @@ def test_single_image_rejected(client):
     assert r.status_code == 400
 
 
-@pytest.mark.parametrize("shape,dims,expected_area,expected_min_height", [
-    ("rectangular", {"panel_height_cm": "20", "panel_width_cm": "30"}, 600.0, 4.0),
-    ("cylindrical", {"panel_height_cm": "10", "panel_circumference_cm": "31.4"}, 125.6, 2.5),
-    ("other", {"panel_area_cm2_other": "75"}, 75.0, 1.5),
-])
-def test_scan_with_panel_dimensions_selects_table_i_band(
-    client, shape, dims, expected_area, expected_min_height,
-):
-    data = {"label_text": "MRP Rs. 45.00 (incl. of all taxes)", "marker_mm": "40",
-            "panel_shape": shape, **dims}
+def test_scan_ignores_removed_form_fields(client):
+    """brand/common_name/panel_shape/panel dimensions were dropped from the
+    web scan form -- a stale client (or old bookmark) that still posts them
+    must not have them silently take effect."""
     r = client.post(
         "/scan",
         files=[("images", ("front.png", _marker_png(), "image/png")),
                ("images", ("back.png", _marker_png(), "image/png"))],
-        data=data,
+        data={"label_text": "MRP Rs. 45.00 (incl. of all taxes)", "marker_mm": "40",
+              "brand": "Acme Foods", "common_name": "tomato ketchup",
+              "panel_shape": "rectangular", "panel_height_cm": "20", "panel_width_cm": "30"},
     )
     assert r.status_code == 200, r.text
-    fa = r.json()["font_analysis"]
-    assert fa["panel_area_cm2"]["value"] == pytest.approx(expected_area)
-    assert fa["table_i_band"]["min_height_mm"] == pytest.approx(expected_min_height)
-    assert fa["panel_input"]["shape"] == shape
-    assert fa["panel_input"]["clause"] == "Rule 7(4)"
-
-
-def test_scan_with_incomplete_panel_dimensions_is_rejected(client):
-    r = client.post(
-        "/scan",
-        files=[("images", ("front.png", _marker_png(), "image/png")),
-               ("images", ("back.png", _marker_png(), "image/png"))],
-        data={"marker_mm": "40", "panel_shape": "rectangular", "panel_height_cm": "20"},
-    )
-    assert r.status_code == 400
+    body = r.json()
+    assert body["product"]["brand"] is None
+    common_name = next(d for d in body["declarations"] if d["id"] == "common_name")
+    assert common_name["status"] == "not_assessable"
+    assert body["font_analysis"].get("panel_area_cm2") is None
 
 
 def test_ecommerce_listing_accepts_text_only_input(client):
@@ -282,9 +268,12 @@ def test_download_gated_until_finalized_when_review_items_pending(client):
     assert pdf.status_code in (200, 503)  # 503 only if WeasyPrint natives are missing
 
 
-def test_download_allowed_without_finalizing_when_nothing_to_review(client):
+def test_download_allowed_once_the_one_remaining_review_item_is_cleared(client):
     # E-commerce listing (no font/placement checks) with every Rule 6 declaration
-    # either matched or legitimately not_applicable -- a genuine zero-review-items scan.
+    # either matched or legitimately not_applicable -- the label text alone can
+    # get every declaration except common_name to a final status; common_name
+    # can no longer be supplied via the form, so it's always the one thing left
+    # to review, never a silent pass.
     scan_id = client.post(
         "/scan",
         data={"label_text": (
@@ -294,9 +283,19 @@ def test_download_allowed_without_finalizing_when_nothing_to_review(client):
             "MRP Rs. 45.00 (incl. of all taxes)\n"
             "Unit sale price: Rs. 0.50 per g\n"
             "Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567\n"
-        ), "common_name": "tomato ketchup", "category": "food", "source": "ecommerce_listing"},
+        ), "category": "food", "source": "ecommerce_listing"},
     ).json()["report_id"]
-    assert client.get(f"/scans/{scan_id}/review-items").json()["items"] == []
+    assert client.get(f"/scans/{scan_id}/report.pdf").status_code == 409
+
+    items = client.get(f"/scans/{scan_id}/review-items").json()["items"]
+    assert [i["id"] for i in items] == ["common_name"]
+    assert items[0]["reason"] == "generic name needs officer confirmation"
+
+    finalized = client.post(f"/scans/{scan_id}/finalize", json={"actions": [
+        {"declaration_id": "common_name", "verdict": "verified_compliant", "note": "checked on pack"},
+    ]})
+    assert finalized.status_code == 200
+
     assert client.get(f"/scans/{scan_id}/report.pdf").status_code in (200, 503)
 
 

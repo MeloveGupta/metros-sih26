@@ -195,15 +195,8 @@ async def scan(
     marker_mm: Optional[float] = Form(None),
     dict_name: str = Form("DICT_4X4_50"),
     product_name: Optional[str] = Form(None),
-    brand: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
-    common_name: Optional[str] = Form(None),
-    panel_shape: Optional[str] = Form(None),
-    panel_height_cm: Optional[float] = Form(None),
-    panel_width_cm: Optional[float] = Form(None),
-    panel_circumference_cm: Optional[float] = Form(None),
-    panel_area_cm2_other: Optional[float] = Form(None),
     llm: bool = Form(True),
     session=Depends(get_session),
     current_user: CurrentUser = Depends(require_role("officer", "admin")),
@@ -261,7 +254,7 @@ async def scan(
         ocrs = [_ocr_image(img, label_text if i == 0 else None)
                 for i, img in enumerate(decoded)]
 
-    product = Product(name=product_name, brand=brand, category=category, source=source)
+    product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,
                                             name=current_user.name or current_user.sub,
                                             role=current_user.role))
@@ -271,11 +264,6 @@ async def scan(
                           image_file=filenames[0],
                           extract_backend="regex" if llm is False else "auto",
                           label_text_provided=bool(label_text),
-                          common_name=common_name,
-                          panel_shape=panel_shape, panel_height_cm=panel_height_cm,
-                          panel_width_cm=panel_width_cm,
-                          panel_circumference_cm=panel_circumference_cm,
-                          panel_area_cm2_other=panel_area_cm2_other,
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,
                           save_crops=True, skip_physical_measurement=is_listing)
@@ -289,7 +277,7 @@ async def scan(
 
 @app.get("/scans")
 def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = None,
-               brand: Optional[str] = None, category: Optional[str] = None,
+               category: Optional[str] = None,
                finalized: Optional[bool] = None, has_rule7_flag: Optional[bool] = None,
                date_from: Optional[str] = None, date_to: Optional[str] = None,
                limit: int = 50, offset: int = 0,
@@ -302,7 +290,7 @@ def list_scans(disposition: Optional[str] = None, product_name: Optional[str] = 
         raise HTTPException(status_code=400, detail="date_from/date_to must be ISO dates")
 
     rows, total = search_scans(
-        session, disposition=disposition, product_name=product_name, brand=brand,
+        session, disposition=disposition, product_name=product_name,
         category=category, finalized=finalized, has_rule7_flag=has_rule7_flag,
         date_from=parsed_from, date_to=parsed_to, limit=limit, offset=offset,
     )
