@@ -140,6 +140,34 @@ python scripts/compare_readers.py --photos-dir path/to/photos \
 
 ### Known limitations
 
+- **Verified on this branch's own reference hardware (RTX 4070 Laptop,
+  8GB VRAM, driver 580.173.02, CUDA 13.0): `pipeline.predict()` did not
+  return within 5 minutes for a single small (900x400px, two lines of text)
+  synthetic label image.** Install itself succeeded cleanly (real sizes
+  below); model construction from cached weights was fast (~2.2s); the
+  actual inference call is where it hangs or is extremely slow — confirmed
+  twice (once via `tests/test_paddle_integration.py`, once via an isolated
+  diagnostic script with a hard `timeout 300` that fired, both showing the
+  same behavior: `predict()` never returning). This was **not** root-caused
+  within this branch's scope — possible causes include the untested cu126
+  wheel / CUDA 13.0 driver combination, a missing engine-config entry (the
+  run logged `"Bucketed engine_config has no entry for resolved engine
+  'paddle_dynamic'"`, which may or may not be related), or something
+  specific to this GPU's compute capability. Real per-image inference
+  timing is therefore **not available** from this branch as shipped — this
+  is the honest result of the verification this README asked for, not a
+  documented or claimed number.
+- **Real install footprint** (this environment): `paddlepaddle-gpu` +
+  `paddleocr[doc-parser]` + deps came to **~3.1GB** in `site-packages`
+  (mostly the `paddle` package itself, bundling CUDA/cuDNN/cuBLAS/etc.
+  runtimes), plus a **~2.0GB** model-weights cache at
+  `~/.paddlex/official_models/` (`PaddleOCR-VL-1.6` and `PP-DocLayoutV3`,
+  the layout-detection model it also pulls in) — **~5.1GB total**, close to
+  the ~3-5GB estimate in step 0 (which was explicitly not a documented
+  figure). The GPU wheel download itself was also badly throttled from
+  `paddlepaddle.org.cn`'s CDN on this network (fluctuating between
+  <0.1MB/s and ~10MB/s over roughly 2 hours for ~3GB) — budget real time
+  for this, it is not a fast `pip install`.
 - **No documented VRAM minimum.** Neither PaddleOCR-VL doc page states one
   -- behavior on a smaller GPU, or CPU-only, is unverified by this branch.
 - **No line/word boxes from PaddleOCR-VL.** Its documented output is
@@ -148,13 +176,11 @@ python scripts/compare_readers.py --photos-dir path/to/photos \
   existing marker-token fallback in `backend/pipeline.py` — unchanged from
   before this branch, and true regardless of which engine reads the
   declaration text.
-- **No published speed benchmark**, on any hardware, from either doc page.
-  Real numbers come from this branch's own model-load/per-image logging
-  (`backend/vision/paddle_vl.py`) and `scripts/compare_readers.py` — not
-  from PaddlePaddle's documentation.
+- **No published speed benchmark**, on any hardware, from either doc page —
+  and, per the finding above, this branch cannot supply one either.
 - **CUDA 13.0 against a cu126-built wheel** (`requirements-paddle.txt`) is
   an assumption (NVIDIA driver backward compatibility), not a documented,
-  tested combination.
+  tested combination — and is a plausible contributor to the hang above.
 - **Local testing only.** No Docker/Vercel/deployment changes were made or
   are planned on this branch.
 

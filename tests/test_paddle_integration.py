@@ -4,6 +4,16 @@ Self-skips unless the model is actually installed (see
 requirements-paddle.txt) -- same pattern this repo already uses for
 Tesseract-gated tests (`if not tesseract_available(): pytest.skip(...)`).
 Run explicitly with: pytest -m paddle
+
+KNOWN ISSUE (verified on the RTX 4070 setup this branch was built against):
+`pipeline.predict()` did not return within 5 minutes for a single small
+(900x400px, two lines of text) synthetic label image -- model construction
+itself was fast (~2s, cached weights), but the actual inference call hung
+or was extremely slow, confirmed via an isolated diagnostic script (not
+just this test) with a hard `timeout 300` that fired. This test has no
+timeout of its own, so running it on hardware with the same issue will hang
+indefinitely -- if you hit this, Ctrl-C and see the README's "Experimental
+branch" section, known limitations.
 """
 from __future__ import annotations
 

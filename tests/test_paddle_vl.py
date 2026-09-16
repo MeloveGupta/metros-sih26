@@ -4,6 +4,8 @@ required. See test_paddle_integration.py for the one test that needs the
 real model installed."""
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
 
@@ -16,14 +18,17 @@ def _blank_image() -> np.ndarray:
     return np.full((10, 10, 3), 255, np.uint8)
 
 
-def test_paddleocr_vl_available_false_when_not_installed():
-    # paddlepaddle/paddleocr are not in requirements.txt or requirements-ocr.txt
-    # -- this environment genuinely doesn't have them, same as CI without
-    # requirements-paddle.txt installed.
+def test_paddleocr_vl_available_false_when_paddle_not_importable(monkeypatch):
+    # Setting a module to None in sys.modules makes `import paddle` raise
+    # ImportError -- this forces the "not installed" path deterministically,
+    # regardless of whether paddle actually happens to be installed in the
+    # environment running this test.
+    monkeypatch.setitem(sys.modules, "paddle", None)
     assert paddle_vl.paddleocr_vl_available() is False
 
 
-def test_read_label_raises_ocr_error_when_unavailable():
+def test_read_label_raises_ocr_error_when_unavailable(monkeypatch):
+    monkeypatch.setitem(sys.modules, "paddle", None)
     with pytest.raises(OcrError):
         paddle_vl.read_label([_blank_image()])
 
