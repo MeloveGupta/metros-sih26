@@ -381,16 +381,19 @@ def _review_items(report) -> List[dict]:
     for d in report.declarations:
         if d.status.value in _REVIEW_STATUSES:
             items.append({"kind": "declaration", "id": d.id, "label": d.label,
-                          "clause": d.clause_ref.clause, "status": d.status.value})
+                          "clause": d.clause_ref.clause, "status": d.status.value,
+                          "reason": d.note})
     for f in report.font_analysis.items:
         if f.status.value in _REVIEW_STATUSES:
             items.append({"kind": "font", "id": f.declaration_id,
                           "label": f"Letter height -- {f.declaration_id}",
-                          "clause": "Rule 7", "status": f.status.value})
+                          "clause": "Rule 7", "status": f.status.value,
+                          "reason": f.reason})
     for p in report.placement:
         if p.status.value in _REVIEW_STATUSES:
             items.append({"kind": "placement", "id": p.id, "label": p.label,
-                          "clause": p.clause_ref.clause, "status": p.status.value})
+                          "clause": p.clause_ref.clause, "status": p.status.value,
+                          "reason": p.note})
     return items
 
 

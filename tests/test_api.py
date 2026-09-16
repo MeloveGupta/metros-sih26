@@ -298,3 +298,42 @@ def test_download_allowed_without_finalizing_when_nothing_to_review(client):
     ).json()["report_id"]
     assert client.get(f"/scans/{scan_id}/review-items").json()["items"] == []
     assert client.get(f"/scans/{scan_id}/report.pdf").status_code in (200, 503)
+
+
+def test_review_items_include_reason_text():
+    """_review_items() must carry the finding's reason/note through -- an
+    officer needs to know *why* something needs review, not just that it
+    does. Exercised directly against a hand-built Report so it doesn't
+    depend on OCR/vision producing a specific fallback branch."""
+    from datetime import datetime, timezone
+
+    from backend.schemas.report import (
+        ClauseRef, DeclarationFinding, Evidence, FontAnalysis, FontItem,
+        OriginalImage, Report, RuleCatalogInfo, Status,
+    )
+
+    report = Report(
+        report_id="r-review",
+        generated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        rule_catalog=RuleCatalogInfo(version="test", hash="sha256:x"),
+        evidence=Evidence(images=[OriginalImage(file="a.jpg", sha256="x", width=1, height=1)]),
+        declarations=[
+            DeclarationFinding(id="common_name", label="Common name",
+                               clause_ref=ClauseRef(clause="Rule 6(1)(b)"),
+                               status=Status.NOT_ASSESSABLE,
+                               note="generic name needs officer confirmation"),
+        ],
+        placement=[
+            DeclarationFinding(id="placement_x", label="Placement X",
+                               clause_ref=ClauseRef(clause="Rule 8(1)"),
+                               status=Status.NOT_ASSESSABLE, note="some placement reason"),
+        ],
+        font_analysis=FontAnalysis(items=[
+            FontItem(declaration_id="mrp", status=Status.NOT_ASSESSABLE,
+                     reason="panel size not captured, Table-I band not selected"),
+        ]),
+    )
+    by_kind = {i["kind"]: i for i in api._review_items(report)}
+    assert by_kind["declaration"]["reason"] == "generic name needs officer confirmation"
+    assert by_kind["font"]["reason"] == "panel size not captured, Table-I band not selected"
+    assert by_kind["placement"]["reason"] == "some placement reason"
