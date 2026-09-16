@@ -117,10 +117,13 @@ country-of-origin only if imported, consumer-care contact completeness (Rule 6(2
 
 ## 6. Font-size analysis (Rule 7) — detailed
 
-- **Principal display panel area:** measured cm² **± uncertainty** (from the
-  scale + a token polygon) or officer-entered dimensions (rectangular /
-  cylindrical / other, per Rule 7(4) as substituted by GSR 629(E)), and the
-  selected Table-I band with its min-height threshold (normal vs molded).
+- **Principal display panel area:** measured cm² **± uncertainty** from the
+  scale + a detected token polygon. The web scan form no longer takes manual
+  panel dimensions; officer-entered shape/dimensions (rectangular /
+  cylindrical / other, per Rule 7(4) as substituted by GSR 629(E)) are still
+  supported as a `run_scan()`/CLI argument, so a batch/offline workflow can
+  still supply them. Report either way as the selected Table-I band with its
+  min-height threshold (normal vs molded).
 - Per measured declaration: glyph/numeral height **mm ± uncertainty** (the
   median of individual glyph boxes, not the whole word's bounding box),
   per-glyph width/height ratio (Rule 7(3)) with the worst offending character,

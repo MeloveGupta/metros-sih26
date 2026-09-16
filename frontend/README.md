@@ -2,9 +2,10 @@
 
 React + Vite app for Metros: officer sign-in, a tabbed Scan / History /
 Dashboard layout, product scan (photos or an e-commerce listing screenshot/
-pasted text, plus product/panel metadata), a report view with per-declaration
-statuses, Rule 7 font measurements (mm ± uncertainty), an evidence thumbnail
-strip, server-driven officer verification, and PDF/DOCX downloads.
+pasted text, plus an optional product name and category), a report view with
+per-declaration statuses, Rule 7 font measurements (mm ± uncertainty), an
+evidence thumbnail strip, server-driven officer verification, and PDF/DOCX
+downloads.
 
 ## Develop
 
