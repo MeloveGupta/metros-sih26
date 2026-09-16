@@ -57,12 +57,7 @@ from ..db.repository import (
 from ..pipeline import EvidenceImageInput, run_scan
 from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
-from ..vision.ocr import (
-    OcrResult,
-    ocr_from_text,
-    tesseract_available,
-    tesseract_ocr,
-)
+from ..vision.ocr import engine_available, select_ocr_engine
 from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
@@ -86,7 +81,13 @@ def get_session():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": app.version}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "version": app.version,
+        "ocr_engine": settings.ocr_engine,
+        "ocr_engine_available": engine_available(settings.ocr_engine),
+    }
 
 
 class TokenRequest(BaseModel):
@@ -172,17 +173,6 @@ def _save_uploads(report_id: str, filenames: List[str], raw: List[bytes],
     return saved
 
 
-def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
-    if label_text:
-        return ocr_from_text(label_text)
-    if tesseract_available():
-        try:
-            return tesseract_ocr(img)
-        except MetrosError:
-            return ocr_from_text("")
-    return ocr_from_text("")
-
-
 @app.post("/scan")
 async def scan(
     images: List[UploadFile] = File(default=[]),
@@ -238,8 +228,7 @@ async def scan(
     report_id = str(uuid.uuid4())
     evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
-    ocrs = [_ocr_image(img, label_text if i == 0 else None)
-            for i, img in enumerate(decoded)]
+    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
 
     product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,
@@ -249,7 +238,8 @@ async def scan(
         report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                           product=product, inspection=inspection,
                           image_file=filenames[0],
-                          ocr_backend_used="tesseract",
+                          ocr_backend_used=ocr_backend_used,
+                          ocr_warning=ocr_warning,
                           label_text_provided=bool(label_text),
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,

@@ -1,10 +1,11 @@
-"""OCR adapter.
+"""OCR adapters.
 
 The pipeline consumes an `OcrResult` (full text + tokens with pixel boxes).
-The default backend is PaddleOCR (offline, per-character/line boxes); it is
-imported lazily so the rest of the system runs without it. `ocr_from_text` lets
-callers/tests supply text (and optional boxes) directly — useful for the CLI's
-"paste the label text" mode and for deterministic testing.
+Two engines are supported -- Tesseract (word-level boxes) and, on the
+experimental branch, PaddleOCR-VL (text only, see `paddle_vl.py`) -- chosen
+by `select_ocr_engine()` below. `ocr_from_text` lets callers/tests supply
+text (and optional boxes) directly — useful for the CLI's "paste the label
+text" mode and for deterministic testing.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from ..core.config import get_settings
 from ..core.errors import OcrError
 
 BBox = Tuple[int, int, int, int]  # x, y, w, h
@@ -91,28 +93,67 @@ def tesseract_ocr(image: np.ndarray, lang: str = "eng") -> OcrResult:
     return OcrResult(text=text, tokens=tokens)
 
 
-def paddle_ocr(image: np.ndarray, lang: str = "en") -> OcrResult:
-    """Run PaddleOCR over a BGR image. Raises OcrError if PaddleOCR is absent."""
-    try:
-        from paddleocr import PaddleOCR
-    except Exception as exc:  # ImportError or backend load failure
-        raise OcrError(
-            "PaddleOCR is not installed. Install `paddleocr` + `paddlepaddle` "
-            "(see requirements.txt), or use ocr_from_text() to supply label text. "
-            f"Underlying error: {exc}"
-        ) from exc
+def paddleocr_vl_available() -> bool:
+    """True if the PaddleOCR-VL engine (backend/vision/paddle_vl.py) is
+    installed. Import only -- does not load the model."""
+    from .paddle_vl import paddleocr_vl_available as _available
+    return _available()
 
-    engine = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
-    raw = engine.ocr(image, cls=True)
-    tokens: List[Token] = []
-    lines: List[str] = []
-    for page in raw or []:
-        for entry in page or []:
-            box, (txt, conf) = entry
-            xs = [p[0] for p in box]
-            ys = [p[1] for p in box]
-            bbox = (int(min(xs)), int(min(ys)),
-                    int(max(xs) - min(xs)), int(max(ys) - min(ys)))
-            tokens.append(Token(text=txt, bbox=bbox, confidence=float(conf)))
-            lines.append(txt)
-    return OcrResult(text="\n".join(lines), tokens=tokens)
+
+def engine_available(engine: str) -> bool:
+    """True if the named OCR engine ("paddleocr_vl" or "tesseract") is
+    installed and usable right now."""
+    if engine == "paddleocr_vl":
+        return paddleocr_vl_available()
+    return tesseract_available()
+
+
+def _tesseract_per_image(images) -> List[OcrResult]:
+    ocrs = []
+    for img in images:
+        try:
+            ocrs.append(tesseract_ocr(img))
+        except OcrError:
+            ocrs.append(ocr_from_text(""))
+    return ocrs
+
+
+def select_ocr_engine(
+    images: List[np.ndarray],
+    label_text: Optional[str],
+    engine: Optional[str] = None,
+) -> Tuple[List[OcrResult], str, Optional[str]]:
+    """Choose and run an OCR engine for a scan's images.
+
+    Returns (ocrs, backend_used, warning): `ocrs` is a list of OcrResult
+    aligned 1:1 with `images` (as `run_scan()` expects); `backend_used` is
+    "paddleocr_vl" / "tesseract" / "label_text" (see
+    schemas.report.Extraction.backend_used); `warning` is a human-readable
+    string when a fallback occurred, else None. Never raises -- an engine
+    that's missing or fails just falls back, so a scan never silently
+    returns nothing.
+    """
+    if label_text:
+        blanks = [ocr_from_text("") for _ in images[1:]]
+        return [ocr_from_text(label_text)] + blanks, "label_text", None
+
+    engine = engine or get_settings().ocr_engine
+
+    if engine == "paddleocr_vl":
+        try:
+            from .paddle_vl import read_label
+            combined = read_label(images)
+            blanks = [ocr_from_text("") for _ in images[1:]]
+            return [combined] + blanks, "paddleocr_vl", None
+        except Exception as exc:
+            warning = f"PaddleOCR-VL unavailable/failed ({exc}); used Tesseract OCR instead"
+            if tesseract_available():
+                return _tesseract_per_image(images), "tesseract", warning
+            return ([ocr_from_text("") for _ in images], "tesseract",
+                    warning + "; Tesseract is not installed either, no text could be read")
+
+    # engine == "tesseract" (explicitly chosen, not a fallback -- no warning).
+    if tesseract_available():
+        return _tesseract_per_image(images), "tesseract", None
+    return ([ocr_from_text("") for _ in images], "tesseract",
+            "Tesseract OCR is not installed; no text could be read")
