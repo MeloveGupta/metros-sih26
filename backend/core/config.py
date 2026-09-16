@@ -1,9 +1,8 @@
 """Runtime configuration, sourced from environment variables.
 
 Every setting has a working default so the pipeline runs with no environment
-at all (SQLite, auth-secret placeholder, no AI reader key). Secrets (JWT
-secret, the Anthropic API key) must be overridden in production via `.env`
-(see `.env.example`).
+at all (SQLite, auth-secret placeholder, on-device OCR). Secrets (the JWT
+secret) must be overridden in production via `.env` (see `.env.example`).
 """
 from __future__ import annotations
 

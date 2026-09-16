@@ -1,6 +1,6 @@
 # Architecture — SIH26034 Legal Metrology Compliance Scanner
 
-> Python computer-vision pipeline behind an online web app. Scans a
+> Python computer-vision pipeline behind a web app. Scans a
 > packaged-commodity label, measures declaration font height in **real
 > millimetres**, validates every mandatory declaration against the Legal
 > Metrology (Packaged Commodities) Rules, 2011, and emits an enforcement-ready
@@ -10,9 +10,10 @@
 
 ## 1. Design principles
 
-1. **LLM extracts, code decides.** Vision/NLP turns pixels into structured
-   fields; a deterministic rule engine produces the verdict. Verdicts are
-   reproducible and cite the exact rule clause. An LLM never decides compliance.
+1. **OCR extracts, code decides.** Vision turns pixels into text; deterministic
+   regex parsers turn text into structured fields; a deterministic rule engine
+   produces the verdict. Verdicts are reproducible and cite the exact rule
+   clause. No model ever decides compliance.
 2. **Decision-support, not adjudication.** The system reports **potential**
    non-compliance with a confidence + evidence crop, flagged for officer
    verification — it makes no final legal finding and cannot verify actual
@@ -25,12 +26,10 @@
 4. **Rules are versioned data.** Each rule stores clause + source URL + gazette +
    effective-from + applicability, so an officer amends it without a redeploy and
    reports cite only officially verified text.
-5. **Online, with a deterministic fallback.** The AI reader (Claude, via the
-   Anthropic API) is the default way declaration text is read from a photo —
-   it needs internet and an API key. When no key is set or a call fails, the
-   pipeline automatically falls back to on-device Tesseract OCR + regex, so a
-   scan never silently returns nothing. Either way, only label photos are
-   sent to the AI reader — never personal/location data (DPDP Act, 2023).
+5. **Local by default.** Declaration text is read from a photo by on-device
+   Tesseract OCR + regex — no internet or API key required. A scan never
+   silently returns nothing: with neither a photo nor pasted text readable,
+   the report is `needs_officer_review`, never a silent empty pass.
 6. **The moat is geometry, not AI.** Font height in mm comes from marker scale +
    pixel measurement — physics, deterministic. No model guesses a size.
 7. **Flat over nested.** Many shallow top-level modules; nesting kept ≤ 2 deep.
@@ -45,13 +44,12 @@
 [vision.scale]     detect ArUco  →  mm_per_pixel          (deterministic scale)
     │
     ▼
-[extract]          Claude reads the images directly (default, needs an API
-                    key) → fields (MRP, net qty, mfg date, care info); on no
-                    key / a failed call, falls back to Tesseract OCR + regex
+[extract]          Tesseract OCR reads label photos on-device → regex parsers
+                    turn text into fields (MRP, net qty, mfg date, care info)
     │
     ▼
 [vision.measure]   glyph_px × mm_per_pixel  →  glyph_mm   →  Rule 7 font check
-    │                        (always deterministic geometry, never the AI reader)
+    │                        (always deterministic geometry, never the OCR engine)
     ▼
 [rules.engine]     fields + measurements  →  verdict per clause + evidence crop
     │
@@ -69,8 +67,7 @@
 | Concern | Choice | Reason |
 |---------|--------|--------|
 | Scale recovery | OpenCV `cv2.aruco` | known-size marker → exact mm, deterministic |
-| Field parsing (primary) | Claude (Anthropic API) | reads label photos directly, no OCR pass needed |
-| Field parsing (fallback) | Tesseract OCR + regex | automatic when no API key or the API call fails |
+| Field parsing | Tesseract OCR + regex | on-device, no internet or API key needed |
 | Rule engine | plain Python + YAML catalog | deterministic, clause-cited, no-redeploy edits |
 | API | FastAPI | async, Python (one language with CV), free OpenAPI |
 | DB | PostgreSQL (SQLite for local dev) | records, history, search |
@@ -80,7 +77,7 @@
 | Auth | JWT + RBAC | officer / admin / auditor roles |
 | Deploy | Docker Compose | one-command deployment |
 
-**Why not pure-LLM:** a monocular photo has no absolute scale — the same glyph
+**Why not a pure vision-language model:** a monocular photo has no absolute scale — the same glyph
 is 2 mm or 20 mm depending on camera distance, and both render identical
 pixels. No model recovers information the image does not contain. Rule 7
 therefore needs a physical reference (ArUco), and enforcement needs a
@@ -160,8 +157,7 @@ AuditLog    (id, user_id, action, target, reason, created_at)
 
 `docker-compose up` brings up: API (FastAPI + Uvicorn), PostgreSQL, frontend
 (static build via nginx). Evidence images/crops live on a Docker volume
-(`data/uploads`), not an object-storage service. The API needs outbound
-internet reachability to `api.anthropic.com` for the AI reader; without it (or
-without `ANTHROPIC_API_KEY` set), every scan automatically uses the Tesseract
-OCR fallback instead. See [`docs/deployment.md`](deployment.md) for the full
-env-var table and setup steps.
+(`data/uploads`), not an object-storage service. Label reading is on-device
+(Tesseract OCR) — no outbound internet dependency. See
+[`docs/deployment.md`](deployment.md) for the full env-var table and setup
+steps.

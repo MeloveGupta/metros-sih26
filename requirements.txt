@@ -1,7 +1,8 @@
-# Core backend deps. OCR (PaddleOCR) is intentionally NOT here — it has no
-# wheels on newer Python and is only needed for on-device text reading; install
-# it separately with `pip install -r requirements-ocr.txt` if you want it.
-# Without it, use the label-text path or the LLM extractor.
+# Core backend deps. OCR engines are intentionally NOT here — they're only
+# needed for on-device text reading; install one separately with
+# `pip install -r requirements-ocr.txt` (Tesseract) or
+# `pip install -r requirements-paddle.txt` (PaddleOCR-VL, experimental
+# branch only). Without either, use the label-text path.
 #
 # Pins are lower-bounds so the resolver can pick wheels that exist for your
 # Python version (3.11–3.14+).
@@ -38,9 +39,6 @@ psycopg[binary]>=3.2
 # --- Auth ---
 pyjwt>=2.10
 bcrypt>=4.2
-
-# --- Optional LLM extraction fast-path (auth via ANTHROPIC_API_KEY) ---
-# anthropic>=0.69
 
 # --- Dev / test ---
 pytest>=8.3

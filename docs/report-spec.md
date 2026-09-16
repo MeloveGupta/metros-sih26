@@ -46,10 +46,11 @@ append-only officer verdict.
   geolocation + accuracy; capture device/model.
 - Product identity: name, brand, category, batch/lot (if read), source
   (`retail_pack` / `ecommerce_listing`), SKU/barcode value (as text only).
-- Reader banner: which backend actually produced this report
-  (`extraction.backend_used`: `llm` / `ocr_regex` / `label_text`), any AI-reader
-  error, and warnings (e.g. blurry/glare image, no category specified, or —
-  for an e-commerce listing — that Rule 7/8 aren't assessed at all).
+- Reader banner: which OCR engine actually produced this report
+  (`extraction.backend_used`: `tesseract` / `paddleocr_vl` / `label_text`) and
+  warnings (e.g. blurry/glare image, no category specified, an OCR-engine
+  fallback, or — for an e-commerce listing — that Rule 7/8 aren't assessed
+  at all).
 
 ## 2. Executive summary
 
@@ -169,7 +170,7 @@ country-of-origin only if imported, consumer-care contact completeness (Rule 6(2
 - Statutory authority: **Section 18, Legal Metrology Act, 2009** (prescribed
   declarations required for pre-packaged commodities).
 - Table of every clause cited in this report → source URL, gazette no., effective
-  date, applicability. Only officially verified text (no blog/LLM summaries).
+  date, applicability. Only officially verified text (no blog/model summaries).
 - Amendment provenance where relevant (e.g. Rule 7 Table-I via GSR 629(E),
   w.e.f. 01-01-2018).
 
@@ -239,7 +240,7 @@ country-of-origin only if imported, consumer-care contact completeness (Rule 6(2
     "mm_per_pixel": 0.0, "corner_jitter_px": 0.0,
     "verdict": "calibrated", "reason": null
   },
-  "extraction": { "backend_used": "llm", "llm_error": null, "warnings": [] },
+  "extraction": { "backend_used": "tesseract", "warnings": [] },
   "summary": { "checked": 0, "compliant": 0, "potential_non_compliance": 0,
                "not_detected": 0, "not_assessable": 0, "not_applicable": 0,
                "compliance_ratio": 0.0, "required_actions": [] },

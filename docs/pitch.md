@@ -39,9 +39,9 @@ Four pillars — each is something a generic "upload → GPT says compliant" dem
 | Pillar | What it means | Why judges (LM officers) care |
 |--------|---------------|-------------------------------|
 | **Metric, not guessed** | Letter height in real mm via ArUco scale — pure geometry | It's *measurement*, defensible in an inquiry |
-| **Deterministic verdict** | Same image → same verdict, every time, citing the exact clause | Reproducible; the rule engine never guesses, only the AI reader (which never decides) touches an LLM |
+| **Deterministic verdict** | Same image → same verdict, every time, citing the exact clause | Reproducible; the rule engine never guesses, and no model ever decides compliance |
 | **Rule-true** | Area-based Table-I (GSR 629(E), 2018), Rule 6, Rule 7(3) | Proves we read the gazette, not a blog summary |
-| **Deterministic fallback** | AI reader (Claude) by default; automatic Tesseract OCR fallback with no key or on API failure | A scan never silently returns nothing, key or no key |
+| **Deterministic, local reading** | On-device Tesseract OCR by default | A scan never silently returns nothing, and there's no internet/API-key dependency |
 
 ## 2. Hero feature (the one thing you demo live)
 
@@ -79,15 +79,15 @@ An online web app:
 1. **Capture** — photograph the label with an ArUco scale card in frame (or,
    for an e-commerce listing, upload a screenshot / paste the listing text).
 2. **Measure scale** — detect the marker → `mm_per_pixel` (deterministic).
-3. **Read** — the AI reader (Claude) extracts declaration text directly from
-   the photos; Tesseract OCR + regex is the automatic fallback.
+3. **Read** — Tesseract OCR reads the label photos on-device; deterministic
+   regex parsers turn the text into declaration fields.
 4. **Measure** — panel area (cm²) *and* glyph height (mm) from the scale.
 5. **Validate** — deterministic rule engine checks Rule 6 presence/format and
    Rule 7 height, citing each clause.
 6. **Report** — PDF + editable DOCX with embedded evidence crops; stored in a
    searchable repository; dashboard for officers.
 
-**Design law: LLM extracts, code decides.** AI reads the text; **geometry
+**Design law: OCR extracts, code decides.** OCR reads the text; **geometry
 measures the size**; a deterministic engine issues the verdict.
 
 ## 5. The differentiator — why it's hard (slide: Uniqueness)
@@ -110,12 +110,12 @@ absolute 1 mm/2 mm floor was removed from 7(3) in 2018; band 1's own minimum
 (1.0 mm, 2.0 mm molded) is the only floor there is now.
 
 > A monocular photo has **no absolute scale** — the same letter is 2 mm or 20 mm
-> depending on camera distance, and both render identical pixels. No AI recovers
-> information the image doesn't contain. A known-size **ArUco/AprilTag card** (in
-> the same plane as the declaration) injects the missing scale; **homography /
-> perspective correction** flattens the panel; the rest is deterministic
-> geometry with a reported error bound. **This is why an LLM cannot do it and we
-> can.**
+> depending on camera distance, and both render identical pixels. No model
+> recovers information the image doesn't contain. A known-size **ArUco/AprilTag
+> card** (in the same plane as the declaration) injects the missing scale;
+> **homography / perspective correction** flattens the panel; the rest is
+> deterministic geometry with a reported error bound. **This is why no model
+> can do it and we can.**
 
 **Two honesty rules that build trust (not weaken the pitch):**
 - **Reject uncalibrated measurement.** No marker in frame → no mm number.
@@ -171,8 +171,8 @@ confirmation, repository, PDF/DOCX export).
 - *Multi-view 3D reconstruction* — high risk on curved/shiny packs. **Avoid now.**
 - *Counterfeit detection* — needs forensic genuine/fake data; anomaly ≠ proof. **Avoid now.**
 - *Blockchain* — hashing + audit log + RBAC is simpler and more relevant. **Avoid.**
-- *LLM-driven legal decisions* — verdicts must be deterministic + versioned; an
-  LLM may assist search/explanation but must never decide compliance. **Avoid.**
+- *Model-driven legal decisions* — verdicts must be deterministic + versioned;
+  a model may assist search/explanation but must never decide compliance. **Avoid.**
 
 **Evidence-first note (Feature 2):** a SHA-256 hash proves the file is unaltered
 *after capture* — it does **not** prove the photo is of the claimed product or
@@ -185,7 +185,7 @@ transformation metadata, follow DPDP Act 2023 for any personal/location data.
 ```
 capture (product + ArUco marker, or an e-commerce listing screenshot/text)
   → [OpenCV aruco]   marker → mm_per_pixel
-  → [Claude / Tesseract]  AI reader by default, OCR+regex fallback on no key/failure
+  → [Tesseract]      on-device OCR → regex parsers turn text into fields
   → [CV]             panel area cm² + glyph mm  (Rule 7, always deterministic)
   → [rule engine]    verdict per clause + evidence crop
   → [reports]        PDF + editable DOCX
@@ -198,8 +198,7 @@ capture (product + ArUco marker, or an e-commerce listing screenshot/text)
 |-------|--------|
 | Language | Python (one language across CV + rules + API) |
 | Scale / mm | OpenCV `cv2.aruco` |
-| Field parsing (primary) | Claude (Anthropic API) — reads photos directly |
-| Field parsing (fallback) | Tesseract OCR + regex — automatic, no key needed |
+| Field parsing | Tesseract OCR + regex — on-device, no key needed |
 | Rule engine | Python + YAML catalog (`rules/lmpc-2011.yaml`) |
 | API | FastAPI |
 | DB / storage | PostgreSQL + local-disk evidence storage |

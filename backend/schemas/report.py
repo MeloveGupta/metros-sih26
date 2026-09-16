@@ -210,8 +210,7 @@ class RuleCatalogInfo(BaseModel):
 class Extraction(BaseModel):
     """How the label text was actually read for this report."""
 
-    backend_used: Literal["llm", "ocr_regex", "label_text"] = "ocr_regex"
-    llm_error: Optional[str] = None
+    backend_used: Literal["paddleocr_vl", "tesseract", "label_text"] = "tesseract"
     warnings: List[str] = Field(default_factory=list)
 
 

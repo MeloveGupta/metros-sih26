@@ -60,7 +60,6 @@ from ..schemas.report import Inspection, Officer, OfficerAction, Product
 from ..vision.ocr import (
     OcrResult,
     ocr_from_text,
-    paddle_ocr,
     tesseract_available,
     tesseract_ocr,
 )
@@ -87,8 +86,7 @@ def get_session():
 
 @app.get("/health")
 def health():
-    from ..extract.llm import llm_available
-    return {"status": "ok", "version": app.version, "llm_available": llm_available()}
+    return {"status": "ok", "version": app.version}
 
 
 class TokenRequest(BaseModel):
@@ -182,10 +180,7 @@ def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
             return tesseract_ocr(img)
         except MetrosError:
             return ocr_from_text("")
-    try:
-        return paddle_ocr(img)
-    except MetrosError:
-        return ocr_from_text("")
+    return ocr_from_text("")
 
 
 @app.post("/scan")
@@ -197,7 +192,6 @@ async def scan(
     product_name: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
-    llm: bool = Form(True),
     session=Depends(get_session),
     current_user: CurrentUser = Depends(require_role("officer", "admin")),
 ):
@@ -244,15 +238,8 @@ async def scan(
     report_id = str(uuid.uuid4())
     evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
-    # OCR is only needed when the LLM vision path is NOT used (it reads images
-    # directly). Skipping Tesseract when AI is on removes N slow OCR passes.
-    from ..extract.llm import llm_available
-    use_llm = llm is not False and llm_available()
-    if use_llm and not label_text:
-        ocrs = [ocr_from_text("") for _ in decoded]
-    else:
-        ocrs = [_ocr_image(img, label_text if i == 0 else None)
-                for i, img in enumerate(decoded)]
+    ocrs = [_ocr_image(img, label_text if i == 0 else None)
+            for i, img in enumerate(decoded)]
 
     product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,
@@ -262,7 +249,7 @@ async def scan(
         report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                           product=product, inspection=inspection,
                           image_file=filenames[0],
-                          extract_backend="regex" if llm is False else "auto",
+                          ocr_backend_used="tesseract",
                           label_text_provided=bool(label_text),
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,

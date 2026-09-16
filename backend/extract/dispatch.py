@@ -1,39 +1,15 @@
-"""Choose the extraction backend: Claude (default when available) or offline regex.
+"""Extract declaration fields from OCR/label text.
 
-`auto` uses Claude when `ANTHROPIC_API_KEY` is set and the SDK imports, and falls
-back to Tesseract OCR + the deterministic regex parsers on any failure -- so a
-missing key, a bad key, or a failed API call never produces a silently-empty
-report. When an image is supplied, the LLM path reads the label directly via
-vision (no OCR needed); otherwise it reads the provided OCR/label text.
+Deterministic only -- no model decides a declaration's value or its format
+compliance. Whatever text an OCR engine (or a pasted listing/label) supplies
+goes through the same regex parsers and validators every time.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..core.errors import ExtractionError
-from ..rules.catalog import RuleCatalog
-from .fields import (
-    FieldExtraction,
-    _ORIGIN_CUE,
-    analyze_quantity_declaration,
-    extract_fields,
-    normalize_ws,
-    validate_consumer_care,
-    validate_manufacturer,
-    validate_mrp,
-    validate_net_quantity,
-)
-
-# The LLM only extracts; format compliance is always decided by the same
-# deterministic validators the regex backend uses, run against the LLM's own
-# extracted value text -- the LLM's own format_pass claim is never trusted.
-_DETERMINISTIC_VALIDATORS = {
-    "manufacturer": validate_manufacturer,
-    "mrp": validate_mrp,
-    "net_quantity": validate_net_quantity,
-    "consumer_care": validate_consumer_care,
-}
+from .fields import extract_fields, FieldExtraction
 
 
 @dataclass
@@ -41,153 +17,24 @@ class ExtractionOutcome:
     """What extraction actually did, so the report can show how it read the label."""
 
     fields: List[FieldExtraction]
-    used_llm: bool = False
-    llm_error: Optional[str] = None
-    # The text that was actually fed to the regex parsers (empty when the LLM
-    # vision path succeeded, since no OCR text was needed for that).
+    # The text that was actually fed to the regex parsers.
     text_read: str = ""
-
-
-def _reconcile_common_name(fields, text: str, hint: Optional[str]) -> None:
-    """The LLM never decides compliance: its common_name value is only trusted
-    if it also appears in the OCR/label text, or the officer supplied it
-    directly. Otherwise it needs officer confirmation, same as the regex path.
-    """
-    for f in fields:
-        if f.id != "common_name":
-            continue
-        if hint:
-            found = normalize_ws(hint).lower() in normalize_ws(text).lower()
-            f.present, f.value = found, (hint if found else None)
-            f.needs_confirmation = False
-            continue
-        if f.present and f.value and normalize_ws(f.value).lower() in normalize_ws(text).lower():
-            continue  # LLM value corroborated by the OCR/label text
-        f.present = False
-        f.value = None
-        f.needs_confirmation = True
-        f.confirmation_reason = "generic name needs officer confirmation"
-
-
-def _reconcile_country_of_origin(fields, text: str) -> None:
-    """Rule 6(1)(aa) applies only to imported products. Code decides
-    applicability and presence from the OCR/label text -- the LLM's own
-    assessment is never trusted, even though the prompt also tells it not to
-    infer/guess. When there's no independent text to check against (the
-    vision-only path with no OCR run), a value is only trusted if one was
-    actually given, never invented."""
-    for f in fields:
-        if f.id != "country_of_origin":
-            continue
-        if not text.strip():
-            if not f.value:
-                f.present, f.applicable = False, False
-            continue
-        m = _ORIGIN_CUE.search(text)
-        if not m:
-            f.present, f.applicable, f.value = False, False, None
-            continue
-        f.applicable = True
-        if f.value and normalize_ws(f.value).lower() in normalize_ws(text).lower():
-            f.present = True
-        else:
-            f.present, f.value = False, None
-
-
-def _apply_deterministic_validators(fields, quantity_config: Optional[dict] = None) -> None:
-    for f in fields:
-        validator = _DETERMINISTIC_VALIDATORS.get(f.id)
-        if validator is not None and f.present and f.value:
-            ok, detail = validator(f.value)
-            f.format_pass = ok
-            f.format_detail = None if ok else detail
-        if f.id == "net_quantity" and f.present and f.value:
-            # Rules 11-13 (misleading qualifiers, "when packed", banned
-            # counting words, non-SI units, unit-magnitude mismatches) apply
-            # to the LLM's own value too -- it only extracts, never decides.
-            notes = analyze_quantity_declaration(f.value, quantity_config)
-            flags = [n for sev, n in notes if sev == "flag"]
-            reviews = [n for sev, n in notes if sev == "review"]
-            softs = [n for sev, n in notes if sev == "note"]
-            if flags:
-                f.format_pass = False
-                f.format_detail = "; ".join(flags + reviews + softs)
-            elif reviews:
-                f.needs_confirmation = True
-                f.confirmation_reason = "; ".join(reviews + softs)
-            elif softs:
-                f.format_detail = "; ".join(softs)
 
 
 def extract_declarations(
     text: str,
-    catalog: RuleCatalog,
-    backend: str = "regex",
-    images=None,
+    catalog,
     common_name_hint: Optional[str] = None,
 ) -> ExtractionOutcome:
-    """Extract declarations using the requested backend.
-
-    backend: "regex" (offline default), "llm" (require Claude), or "auto"
-    (Claude if available, else OCR + regex). `images` (a list of BGR ndarrays,
-    e.g. front + back) enables the Claude vision path. `common_name_hint` is
+    """Extract every declaration in `catalog` from `text` via the
+    deterministic regex parsers (each parser validates its own format --
+    see e.g. `parse_mrp`/`validate_mrp`, `parse_net_quantity`/
+    `analyze_quantity_declaration` in `fields.py`). `common_name_hint` is
     the officer-supplied generic name (e.g. "tomato ketchup"), if given.
     """
     ids = [d.id for d in catalog.declarations]
     text = text or ""
     qty_config = catalog.quantity_declaration or None
-
-    if backend == "regex":
-        return ExtractionOutcome(
-            fields=extract_fields(text, ids, common_name_hint=common_name_hint,
-                                  quantity_config=qty_config),
-            text_read=text,
-        )
-
-    if backend in ("llm", "auto"):
-        from .llm import (
-            extract_fields_from_images,
-            extract_fields_llm,
-            llm_available,
-        )
-        if backend == "llm" or llm_available():
-            try:
-                if images:
-                    fields = extract_fields_from_images(images, catalog, ids)
-                else:
-                    fields = extract_fields_llm(text, catalog, ids)
-                _reconcile_common_name(fields, text, common_name_hint)
-                _reconcile_country_of_origin(fields, text)
-                _apply_deterministic_validators(fields, qty_config)
-                return ExtractionOutcome(fields=fields, used_llm=True)
-            except ExtractionError as exc:
-                if backend == "llm":
-                    raise
-                # auto: fall back to OCR + regex rather than silently scoring an
-                # empty report. If OCR was skipped upstream (the caller expected
-                # the LLM vision path to read the images directly), run it now.
-                fallback_text = text
-                if not fallback_text.strip() and images:
-                    from ..vision.ocr import tesseract_available, tesseract_ocr
-                    if tesseract_available():
-                        parts = []
-                        for img in images:
-                            try:
-                                parts.append(tesseract_ocr(img).text)
-                            except Exception:
-                                continue
-                        fallback_text = "\n".join(p for p in parts if p)
-                return ExtractionOutcome(
-                    fields=extract_fields(fallback_text, ids, common_name_hint=common_name_hint,
-                                          quantity_config=qty_config),
-                    used_llm=False,
-                    llm_error=str(exc),
-                    text_read=fallback_text,
-                )
-        return ExtractionOutcome(
-            fields=extract_fields(text, ids, common_name_hint=common_name_hint,
-                                  quantity_config=qty_config),
-            text_read=text,
-        )
-
-    raise ExtractionError(f"unknown extraction backend {backend!r}")
+    fields = extract_fields(text, ids, common_name_hint=common_name_hint,
+                            quantity_config=qty_config)
+    return ExtractionOutcome(fields=fields, text_read=text)

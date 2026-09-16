@@ -2,9 +2,8 @@
 
 No network. Each parser reports whether the declaration was detected, the
 captured value, and (where the rule prescribes a format) whether the format
-matches. This is the fallback path used when the Claude reader
-(`extract.llm`) is unavailable or fails; it always runs, so the tool works
-with no API key.
+matches. This is the only extraction path -- it always runs, so the tool
+works with no external dependency beyond an OCR engine.
 
 Extraction never decides compliance — it only reports what was detected and
 whether the format matches. The rule engine turns that into a status.
@@ -102,8 +101,7 @@ def _window(text: str, start: int, max_chars: int = 200, max_lines: int = 5) -> 
     return "\n".join(chunk.splitlines()[:max_lines])
 
 
-# --- shared, pure format validators (used by both the regex parsers below and
-# the LLM-value validation path) ---
+# --- shared, pure format validators (used by the regex parsers below) ---
 
 def validate_manufacturer(window: str) -> tuple[bool, str]:
     if _PIN.search(window):

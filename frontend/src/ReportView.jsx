@@ -199,11 +199,10 @@ export default function ReportView({ report, onUpdate }) {
       </p>
 
       {report.extraction && (
-        <p className={`readerline${report.extraction.backend_used !== "llm" ? " readerline-fallback" : ""}`}>
-          Reader: <b>{report.extraction.backend_used === "llm" ? "AI reader"
+        <p className={`readerline${report.extraction.backend_used !== "paddleocr_vl" ? " readerline-fallback" : ""}`}>
+          Reader: <b>{report.extraction.backend_used === "paddleocr_vl" ? "PaddleOCR-VL"
             : report.extraction.backend_used === "label_text" ? "pasted label text"
-            : "OCR fallback"}</b>
-          {report.extraction.llm_error && <span className="muted"> — AI reader failed: {report.extraction.llm_error}</span>}
+            : "Tesseract OCR"}</b>
           {report.extraction.warnings.map((w) => <span className="muted" key={w}> · {w}</span>)}
         </p>
       )}

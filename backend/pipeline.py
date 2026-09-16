@@ -525,7 +525,8 @@ def run_scan(
     image_file: str = "upload.jpg",
     captured_at: Optional[datetime] = None,
     catalog: Optional[RuleCatalog] = None,
-    extract_backend: str = "regex",
+    ocr_backend_used: str = "tesseract",
+    ocr_warning: Optional[str] = None,
     label_text_provided: bool = False,
     common_name: Optional[str] = None,
     category: Optional[str] = None,
@@ -589,18 +590,12 @@ def run_scan(
                 cal = c  # remember an uncalibrated result as the fallback
     marker_image = images[cal_idx]
 
-    # 2. Extraction over ALL images (vision) or combined OCR text (regex).
+    # 2. Extraction over the combined OCR/label text (regex, deterministic).
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
-    outcome = extract_declarations(combined_text, catalog, backend=extract_backend,
-                                   images=list(images), common_name_hint=common_name)
+    outcome = extract_declarations(combined_text, catalog, common_name_hint=common_name)
     fields = outcome.fields
-    unreadable = not outcome.used_llm and not (outcome.text_read or "").strip()
-    if outcome.used_llm:
-        extraction_backend_used = "llm"
-    elif label_text_provided:
-        extraction_backend_used = "label_text"
-    else:
-        extraction_backend_used = "ocr_regex"
+    unreadable = not (outcome.text_read or "").strip()
+    extraction_backend_used = "label_text" if label_text_provided else ocr_backend_used
 
     # Font measurement (Rule 7) needs glyph boxes from the MARKER image's OCR.
     # In the vision path OCR was skipped for speed, so if a card was found but we
@@ -667,6 +662,8 @@ def run_scan(
     )
     readability = _readability_findings(catalog, combined_text)
 
+    if ocr_warning:
+        extraction_warnings.append(ocr_warning)
     if skip_physical_measurement:
         extraction_warnings.append(
             "letter height (Rule 7) and placement (Rule 8) are not assessed for an "
@@ -677,7 +674,7 @@ def run_scan(
             "product category not specified; no food/cosmetic exemptions applied"
         )
     if unreadable:
-        # No text could be read from any source (LLM failed/unavailable AND
+        # No text could be read from any source (no pasted label text AND
         # OCR found nothing): declarations are unknown, not "absent".
         for d in declarations:
             d.status = Status.NOT_ASSESSABLE
@@ -689,7 +686,6 @@ def run_scan(
 
     extraction = Extraction(
         backend_used=extraction_backend_used,
-        llm_error=outcome.llm_error,
         warnings=extraction_warnings,
     )
 

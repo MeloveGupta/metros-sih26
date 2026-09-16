@@ -5,11 +5,11 @@ Scan a packaged-commodity label and auto-check it against the **Legal Metrology
 **millimetres** (ArUco scale card), validates every mandatory declaration, and
 generates a detailed, clause-cited compliance report.
 
-Metros is an **online web app**: label photos are sent to Anthropic's API for
-the AI reader (see "OCR / label reading" below), and reports are stored server
--side. It reports **potential** non-compliance for officer verification, with
-a measurement uncertainty on every millimetre figure — decision-support, not
-a final legal finding.
+Metros is a web app with a server-side backend (see "OCR / label reading"
+below for how a label photo is turned into text), and reports are stored
+server-side. It reports **potential** non-compliance for officer
+verification, with a measurement uncertainty on every millimetre figure —
+decision-support, not a final legal finding.
 
 - **Problem statement:** [`docs/problem-statement.md`](docs/problem-statement.md)
 - **Architecture:** [`docs/architecture.md`](docs/architecture.md)
@@ -19,9 +19,8 @@ a final legal finding.
 
 ## Stack
 
-Python · OpenCV (`cv2.aruco`) · Claude (Anthropic API) + Tesseract OCR fallback
-· FastAPI · SQLAlchemy · React + Vite · WeasyPrint + python-docx · Docker
-Compose.
+Python · OpenCV (`cv2.aruco`) · Tesseract OCR · FastAPI · SQLAlchemy · React +
+Vite · WeasyPrint + python-docx · Docker Compose.
 
 ## Layout
 
@@ -30,8 +29,8 @@ docs/        problem statement, architecture, report spec, deployment, pitch, LM
 backend/
   core/      settings (env-sourced), typed errors, startup safety checks
   schemas/   canonical Report model (pydantic)
-  vision/    scale recovery (ArUco -> mm/px + homography), measurement, OCR fallback
-  extract/   AI reader (Claude) + deterministic regex parsers (Rule 6 declarations)
+  vision/    scale recovery (ArUco -> mm/px + homography), measurement, OCR engines
+  extract/   deterministic regex parsers (Rule 6 declarations)
   rules/     YAML catalog loader + deterministic engine
   reports/   JSON / HTML / PDF / DOCX renderer
   db/        SQLAlchemy models + repository (search, stats, audit log)
@@ -66,18 +65,16 @@ roles gate every route. For local dev without touching auth, set
 
 ## OCR / label reading
 
-Three ways to read a label, tried in this order:
-- **AI reader (default)** — `make install-llm` + `ANTHROPIC_API_KEY` in `.env`.
-  Reads label photos directly via the Claude API (Messages API, vision).
-  Requires an API key; there is no OAuth/subscription-token path.
+Two ways to read a label:
 - **Paste the text** — the UI's label-text field / CLI's `--label-file`; works
   everywhere, no extra install, and skips OCR entirely.
-- **Tesseract OCR fallback** — `make install-ocr`; used automatically when no
-  API key is set or the Claude call fails, so a scan never silently returns
+- **Tesseract OCR** — `make install-ocr`; used automatically to read text from
+  photos when no label text is pasted, so a scan never silently returns
   nothing.
 
 Scale, panel-area, and letter-height measurement (Rule 7) are always done in
-code (OpenCV geometry) — the AI reader never measures or decides compliance.
+code (OpenCV geometry) — no model ever measures or decides compliance;
+extraction is always the deterministic regex parsers in `backend/extract/`.
 
 Single scan without the server:
 

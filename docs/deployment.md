@@ -1,8 +1,8 @@
 # Deployment
 
-Metros is an online web app: the backend needs a database, local disk for
-evidence storage, and (for the default AI reader) outbound internet
-reachability to Anthropic's API. This doc covers running it locally and via
+Metros is a web app: the backend needs a database and local disk for
+evidence storage. Label reading (Tesseract OCR) runs on-device, with no
+outbound internet dependency. This doc covers running it locally and via
 Docker Compose.
 
 ## System requirements
@@ -22,8 +22,7 @@ Docker Compose.
 
 ```bash
 make install            # venv + backend deps
-make install-ocr        # optional: Tesseract fallback (pytesseract)
-make install-llm        # optional: AI reader (anthropic SDK)
+make install-ocr        # optional: Tesseract OCR (pytesseract)
 make card                # -> out/calibration_card.png (print at 100%)
 make seed                # seed officer@metroscan.gov / officer, admin@metroscan.gov / admin
 make run                 # API on :8000
@@ -37,7 +36,7 @@ additional users, or use `POST /users` (admin-only) once one exists.
 ## Docker Compose
 
 ```bash
-cp .env.example .env    # fill in JWT_SECRET at minimum; ANTHROPIC_API_KEY optional
+cp .env.example .env    # fill in JWT_SECRET at minimum
 docker compose up --build
 ```
 
@@ -75,7 +74,6 @@ with session_factory(engine)() as s:
 | `MARKER_SIZE_MM` | `40.0` | no | must match `scripts/gen_calibration_card.py --marker-mm`, or every mm figure is wrong |
 | `MAX_CORNER_JITTER_PX` | `2.0` | no | calibration-quality gate |
 | `MAX_EXTRAPOLATION_SIDES` | `4.0` | no | how far from the marker a measurement is still trusted |
-| `ANTHROPIC_API_KEY` | unset | **yes** | AI reader; unset → every scan uses the Tesseract OCR fallback automatically |
 
 ## Data storage and backup
 
@@ -96,26 +94,12 @@ process startup — editing it takes effect on the next scan with **no
 redeploy or restart needed**. Always record `gazette` and `effective_from`
 on any new/changed entry; never hardcode legal text in Python.
 
-## The AI reader: what data leaves the deployment
-
-When `ANTHROPIC_API_KEY` is set and a scan doesn't include pasted label text,
-the uploaded label **photos** are sent to Anthropic's Messages API (vision)
-to extract declaration text — nothing else about the officer, device, or
-location is sent. This is the only outbound call the backend makes; without
-network reachability to `api.anthropic.com` (or without the key), the
-Tesseract OCR + regex fallback runs instead, entirely locally, and the report
-says so (`extraction.backend_used: "ocr_regex"`). Treat product-label photos
-sent this way per the **DPDP Act, 2023** — they may incidentally contain
-personal or brand data; nothing else the app stores (officer identity,
-inspection metadata) is ever included in that call.
-
 ## Hosting notes
 
 - Serve the frontend over **HTTPS** in production — some browser APIs the
   photo-capture inputs rely on (and any future live-camera work) are
   restricted to secure contexts, and it protects the JWT in transit either way.
-- The API needs a stable outbound path to `api.anthropic.com:443` for the AI
-  reader; if your network blocks it, the app still works via the OCR
-  fallback, just without the primary reader.
+- Label reading (Tesseract OCR) is entirely on-device — no outbound network
+  dependency for it, unlike some earlier revisions of this app.
 - `data/uploads` grows with every scan (originals + crops are never deleted)
   — plan storage and backups accordingly for real inspection volume.
