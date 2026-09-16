@@ -256,7 +256,7 @@ def evaluate(
                 )
             else:
                 status = Status.NOT_ASSESSABLE
-                reason = "panel area needed to select the Table-I band"
+                reason = "panel size not captured, Table-I band not selected"
             status, reason = _apply_width_ratio(status, reason, g.width_ratio, min_width_ratio,
                                                g.width_ratio_char)
         fa.items.append(

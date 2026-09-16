@@ -129,8 +129,8 @@ country-of-origin only if imported, consumer-care contact completeness (Rule 6(2
   01-01-2018) folded the old 1 mm / 2 mm floor into Table-I band 1's own
   minimum. When the panel area isn't known at all, the measurement is checked
   against band 1's minimum only if it's clearly below it; otherwise it's
-  `not_assessable`, "panel area needed to select the Table-I band" — never
-  silently passed.
+  `not_assessable`, "panel size not captured, Table-I band not selected" —
+  never silently passed.
 - Width-ratio exceptions: `1`, `i`, `I`, `l` are excluded from the ⅓-width
   check (their natural width is narrower than their height).
 - Skipped entirely (empty list, not `not_assessable`) for an e-commerce

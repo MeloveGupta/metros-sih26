@@ -125,7 +125,7 @@ def test_no_panel_area_above_band1_minimum_is_not_assessable(catalog):
     _, fa, _ = evaluate(catalog, [], font, calibrated=True)
     item = fa.items[0]
     assert item.status == Status.NOT_ASSESSABLE
-    assert item.reason == "panel area needed to select the Table-I band"
+    assert item.reason == "panel size not captured, Table-I band not selected"
 
 
 def test_font_absolute_has_no_height_floor(catalog):
