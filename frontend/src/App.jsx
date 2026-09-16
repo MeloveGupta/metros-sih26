@@ -5,69 +5,12 @@ import History from "./History.jsx";
 import Login from "./Login.jsx";
 import ReportView from "./ReportView.jsx";
 
-function PanelDimensions({ shape, setShape, dims, setDims }) {
-  return (
-    <div className="panel-dims">
-      <label className="field">
-        <span>Principal display panel shape</span>
-        <select value={shape} onChange={(e) => setShape(e.target.value)}>
-          <option value="">not specified</option>
-          <option value="rectangular">Rectangular</option>
-          <option value="cylindrical">Cylindrical</option>
-          <option value="other">Other</option>
-        </select>
-      </label>
-      {shape === "rectangular" && (
-        <div className="grid2">
-          <label className="field">
-            <span>Height (cm)</span>
-            <input type="number" step="0.1" value={dims.heightCm}
-              onChange={(e) => setDims((d) => ({ ...d, heightCm: e.target.value }))} />
-          </label>
-          <label className="field">
-            <span>Width (cm)</span>
-            <input type="number" step="0.1" value={dims.widthCm}
-              onChange={(e) => setDims((d) => ({ ...d, widthCm: e.target.value }))} />
-          </label>
-        </div>
-      )}
-      {shape === "cylindrical" && (
-        <div className="grid2">
-          <label className="field">
-            <span>Height (cm)</span>
-            <input type="number" step="0.1" value={dims.heightCm}
-              onChange={(e) => setDims((d) => ({ ...d, heightCm: e.target.value }))} />
-          </label>
-          <label className="field">
-            <span>Circumference (cm)</span>
-            <input type="number" step="0.1" value={dims.circumferenceCm}
-              onChange={(e) => setDims((d) => ({ ...d, circumferenceCm: e.target.value }))} />
-          </label>
-        </div>
-      )}
-      {shape === "other" && (
-        <label className="field">
-          <span>Panel area (cm²)</span>
-          <input type="number" step="0.1" value={dims.areaCm2Other}
-            onChange={(e) => setDims((d) => ({ ...d, areaCm2Other: e.target.value }))} />
-        </label>
-      )}
-    </div>
-  );
-}
-
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
   const [source, setSource] = useState("retail_pack"); // retail_pack | ecommerce_listing
   const [labelText, setLabelText] = useState("");
   const [productName, setProductName] = useState("");
-  const [brand, setBrand] = useState("");
-  const [commonName, setCommonName] = useState("");
   const [category, setCategory] = useState("unknown");
-  const [panelShape, setPanelShape] = useState("");
-  const [panelDims, setPanelDims] = useState({
-    heightCm: "", widthCm: "", circumferenceCm: "", areaCm2Other: "",
-  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const isListing = source === "ecommerce_listing";
@@ -100,9 +43,7 @@ function ScanForm({ onReport }) {
     setErr("");
     try {
       onReport(await scan({
-        files: shots.map((s) => s.file), productName, brand, commonName, category,
-        source, labelText,
-        panel: isListing ? {} : { shape: panelShape, ...panelDims },
+        files: shots.map((s) => s.file), productName, category, source, labelText,
       }));
     } catch (e2) {
       setErr(String(e2.message || e2));
@@ -123,7 +64,9 @@ function ScanForm({ onReport }) {
             : "Add the front and back of the pack, plus any close-ups of the label. More " +
               "photos means the reader finds more declarations. Include the printed Metros " +
               "card in a shot to also measure letter height (Rule 7) — lay the card flat " +
-              "on the same face as the label, touching the text you want measured."}
+              "on the same face as the label, touching the text you want measured. Without " +
+              "the card in frame, letter height still gets measured but can't be checked " +
+              "against the right size threshold."}
         </p>
       </div>
 
@@ -168,39 +111,21 @@ function ScanForm({ onReport }) {
         </label>
       )}
 
-      <div className="grid2">
-        <label className="field">
-          <span>Product name</span>
-          <input value={productName} placeholder="e.g. Tasty Masala Chips"
-            onChange={(e) => setProductName(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Brand</span>
-          <input value={brand} placeholder="e.g. Acme Foods"
-            onChange={(e) => setBrand(e.target.value)} />
-        </label>
-      </div>
-
       <label className="field">
-        <span>Generic name of the product</span>
-        <input value={commonName} placeholder="e.g. tomato ketchup"
-          onChange={(e) => setCommonName(e.target.value)} />
+        <span>Product name</span>
+        <input value={productName} placeholder="e.g. Tasty Masala Chips"
+          onChange={(e) => setProductName(e.target.value)} />
       </label>
 
       <label className="field">
         <span>Product category</span>
         <select required value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="unknown">Unknown / not sure</option>
+          <option value="unknown">Not sure</option>
           <option value="food">Food</option>
           <option value="cosmetic">Cosmetic</option>
-          <option value="other_non_food">Other (non-food)</option>
+          <option value="other_non_food">Other</option>
         </select>
       </label>
-
-      {!isListing && (
-        <PanelDimensions shape={panelShape} setShape={setPanelShape}
-          dims={panelDims} setDims={setPanelDims} />
-      )}
 
       <button className="cta" type="submit" disabled={busy}>
         {busy ? "Analysing…" : "Scan product"}

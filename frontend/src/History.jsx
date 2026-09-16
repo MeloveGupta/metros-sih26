@@ -7,7 +7,7 @@ const DISPOSITIONS = [
 
 function emptyFilters() {
   return {
-    disposition: "", product_name: "", brand: "", category: "",
+    disposition: "", product_name: "", category: "",
     finalized: "", has_rule7_flag: "", date_from: "", date_to: "",
   };
 }
@@ -64,18 +64,11 @@ export default function History({ onOpenReport }) {
         <p className="lede">Search and reopen past scans.</p>
       </div>
 
-      <div className="grid2">
-        <label className="field">
-          <span>Product name</span>
-          <input value={filters.product_name}
-            onChange={(e) => setFilter({ product_name: e.target.value })} placeholder="contains…" />
-        </label>
-        <label className="field">
-          <span>Brand</span>
-          <input value={filters.brand}
-            onChange={(e) => setFilter({ brand: e.target.value })} placeholder="contains…" />
-        </label>
-      </div>
+      <label className="field">
+        <span>Product name</span>
+        <input value={filters.product_name}
+          onChange={(e) => setFilter({ product_name: e.target.value })} placeholder="contains…" />
+      </label>
       <div className="grid2">
         <label className="field">
           <span>Disposition</span>

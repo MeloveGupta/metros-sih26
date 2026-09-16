@@ -40,22 +40,13 @@ export function logout() {
   setAuthToken(null);
 }
 
-export async function scan({ files, productName, brand, commonName, category, panel, source, labelText }) {
+export async function scan({ files, productName, category, source, labelText }) {
   const form = new FormData();
   for (const f of files) form.append("images", f);
   if (productName) form.append("product_name", productName);
-  if (brand) form.append("brand", brand);
-  if (commonName) form.append("common_name", commonName);
   if (category) form.append("category", category);
   if (source) form.append("source", source);
   if (labelText) form.append("label_text", labelText);
-  if (panel && panel.shape) {
-    form.append("panel_shape", panel.shape);
-    if (panel.heightCm) form.append("panel_height_cm", panel.heightCm);
-    if (panel.widthCm) form.append("panel_width_cm", panel.widthCm);
-    if (panel.circumferenceCm) form.append("panel_circumference_cm", panel.circumferenceCm);
-    if (panel.areaCm2Other) form.append("panel_area_cm2_other", panel.areaCm2Other);
-  }
 
   const res = await fetch("/scan", { method: "POST", body: form, headers: _authHeaders() });
   return _asJson(res, "Scan failed");
