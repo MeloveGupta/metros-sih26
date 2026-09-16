@@ -41,7 +41,8 @@ frontend/    React app (sign-in, scan, history, dashboard, report view)
 rules/       lmpc-2011.yaml (rule catalog)
 scripts/     calibration-card generator, user seeding
 docker/      Dockerfiles
-tests/       pytest suite (153 tests; some require Tesseract installed)
+tests/       pytest suite (some tests require Tesseract installed; one
+             requires PaddleOCR-VL, see below)
 ```
 
 ## Quick start (local)
@@ -65,12 +66,14 @@ roles gate every route. For local dev without touching auth, set
 
 ## OCR / label reading
 
-Two ways to read a label:
+Three ways to read a label:
 - **Paste the text** — the UI's label-text field / CLI's `--label-file`; works
   everywhere, no extra install, and skips OCR entirely.
-- **Tesseract OCR** — `make install-ocr`; used automatically to read text from
-  photos when no label text is pasted, so a scan never silently returns
-  nothing.
+- **PaddleOCR-VL** (default, `METROS_OCR_ENGINE=paddleocr_vl`) — this
+  experimental branch only, see the section below.
+- **Tesseract OCR** — `make install-ocr`; the automatic fallback (or set
+  `METROS_OCR_ENGINE=tesseract` to use it directly), so a scan never
+  silently returns nothing.
 
 Scale, panel-area, and letter-height measurement (Rule 7) are always done in
 code (OpenCV geometry) — no model ever measures or decides compliance;
@@ -91,6 +94,69 @@ docker compose up --build     # api + frontend + postgres
 
 See [`docs/deployment.md`](docs/deployment.md) for env vars, data storage, and
 the rule-catalog hot-update process.
+
+## Experimental branch: PaddleOCR-VL (local only)
+
+`experiment/paddleocr-vl` (this branch) replaces nothing else about the app
+-- it's a drop-in alternate label reader, entirely local, no internet or API
+key. **It is never merged into `main`.**
+
+### Setup
+
+Built and tested against: Ubuntu 24.04, NVIDIA RTX 4070 Laptop (8GB VRAM,
+compute capability 8.6), driver 580.173.02, CUDA 13.0.
+
+```bash
+make install-paddle     # paddlepaddle-gpu + paddleocr[doc-parser] -- see
+                         # requirements-paddle.txt for the exact pinned
+                         # commands (and the CPU-only alternative)
+```
+
+`METROS_OCR_ENGINE` (in `.env` or the environment) picks the engine:
+
+```bash
+METROS_OCR_ENGINE=paddleocr_vl   # default -- falls back to Tesseract automatically
+METROS_OCR_ENGINE=tesseract      # use Tesseract directly, no PaddleOCR-VL attempt
+```
+
+`GET /health` reports which engine is configured and whether it's actually
+available right now (`ocr_engine`, `ocr_engine_available`). Every report
+also carries `extraction.backend_used` (which engine actually read that
+scan) and, if PaddleOCR-VL fell back to Tesseract, a warning saying why.
+
+Run the one real-model integration test (skipped by default, see
+`tests/test_paddle_integration.py`):
+
+```bash
+pytest -m paddle
+```
+
+Compare engines on your own photos:
+
+```bash
+python scripts/compare_readers.py --photos-dir path/to/photos \
+    --ground-truth path/to/ground_truth.json --out-csv out/compare.csv
+```
+
+### Known limitations
+
+- **No documented VRAM minimum.** Neither PaddleOCR-VL doc page states one
+  -- behavior on a smaller GPU, or CPU-only, is unverified by this branch.
+- **No line/word boxes from PaddleOCR-VL.** Its documented output is
+  block/paragraph-level, too coarse for Rule 7 (letter height) and Rule 8
+  (placement). Those keep using Tesseract on the calibrated image via the
+  existing marker-token fallback in `backend/pipeline.py` — unchanged from
+  before this branch, and true regardless of which engine reads the
+  declaration text.
+- **No published speed benchmark**, on any hardware, from either doc page.
+  Real numbers come from this branch's own model-load/per-image logging
+  (`backend/vision/paddle_vl.py`) and `scripts/compare_readers.py` — not
+  from PaddlePaddle's documentation.
+- **CUDA 13.0 against a cu126-built wheel** (`requirements-paddle.txt`) is
+  an assumption (NVIDIA driver backward compatibility), not a documented,
+  tested combination.
+- **Local testing only.** No Docker/Vercel/deployment changes were made or
+  are planned on this branch.
 
 ## The moat — Rule 7 in millimetres
 
