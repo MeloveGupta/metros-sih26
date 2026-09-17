@@ -1,18 +1,22 @@
 # Deployment
 
-Metros is a web app: the backend needs a database and local disk for
-evidence storage. Label reading (Tesseract OCR) runs on-device, with no
-outbound internet dependency. This doc covers running it locally and via
-Docker Compose.
+Metros is a web app: the backend needs a database and local disk (or a
+persistent volume) for evidence storage. The default label reader is
+PaddleOCR's hosted API (no GPU, no model download) with on-device Tesseract
+as the automatic fallback. This doc covers running it locally, via Docker
+Compose, and deploying to Vercel (frontend) + Render or Railway (backend).
 
 ## System requirements
 
 - Python 3.11–3.14 (backend), Node 20+ (frontend build)
 - PostgreSQL 14+ in production (SQLite is fine for local dev — it's the
   default with no `DATABASE_URL` set)
-- Tesseract OCR binary on `PATH` for the deterministic fallback reader
-  (`apt-get install tesseract-ocr` / `brew install tesseract`) — optional
-  locally, always installed in the Docker image
+- A `PADDLEOCR_ACCESS_TOKEN` for the default hosted label reader (get one at
+  `aistudio.baidu.com/account/accessToken`) — optional; without one, every
+  scan automatically uses the Tesseract fallback instead
+- Tesseract OCR binary on `PATH` for the fallback reader (`apt-get install
+  tesseract-ocr` / `brew install tesseract`) — optional locally, always
+  installed in the Docker image
 - WeasyPrint's native libs (cairo, pango, gdk-pixbuf) for PDF rendering —
   optional; without them, `GET /scans/{id}/report.pdf` returns 503 (the DOCX
   download still works)
@@ -21,8 +25,8 @@ Docker Compose.
 ## Local setup
 
 ```bash
-make install            # venv + backend deps
-make install-ocr        # optional: Tesseract OCR (pytesseract)
+make install            # venv + backend deps (includes the paddleocr hosted-API client)
+make install-ocr        # optional: Tesseract OCR fallback (pytesseract)
 make card                # -> out/calibration_card.png (print at 100%)
 make seed                # seed officer@metroscan.gov / officer, admin@metroscan.gov / admin
 make run                 # API on :8000
@@ -60,20 +64,63 @@ with session_factory(engine)() as s:
 (`scripts/seed_users.py` itself isn't copied into the image — only
 `backend/` and `rules/` are, to keep the image small.)
 
+## Deploying: Vercel (frontend) + Render or Railway (backend)
+
+No GPU needed anywhere in this path — that's the point of the hosted
+PaddleOCR API.
+
+**1. Backend (Render or Railway), from `docker/api.Dockerfile`:**
+- Create a new **Web Service** from this repo, Dockerfile path
+  `docker/api.Dockerfile`, build context the repo root.
+- Add a **PostgreSQL** database (Render's or Railway's managed Postgres
+  add-on) and set `DATABASE_URL` to the connection string it gives you
+  (`postgresql+psycopg://...` — note the `+psycopg`, this app uses
+  SQLAlchemy's psycopg3 driver, not the bare `postgresql://` string the
+  dashboard shows by default).
+- Attach a **persistent disk** (Render "Disks" / Railway volumes) mounted
+  at, e.g., `/app/data`, and set `UPLOADS_DIR=/app/data/uploads` — without
+  this, evidence images are lost on every redeploy/restart (the container
+  filesystem is ephemeral).
+- Set the env vars from the table below. Both platforms inject `PORT`
+  automatically; the Dockerfile's `CMD` already reads it.
+- Note the backend's public URL (e.g. `https://metros-api.onrender.com`) —
+  you need it for the frontend's `VITE_API_URL` and this service's own
+  `ALLOWED_ORIGINS`.
+
+**2. Frontend (Vercel), from the `frontend/` directory:**
+- Import the repo, set the project root to `frontend/`, framework preset
+  Vite (build command `npm run build`, output `dist`).
+- Set `VITE_API_URL` to the backend URL from step 1
+  (`https://metros-api.onrender.com`, no trailing slash).
+- Deploy. Note Vercel's assigned domain (or your custom domain).
+
+**3. Close the loop — set the backend's `ALLOWED_ORIGINS`** to the Vercel
+domain from step 2 (e.g. `https://metros.vercel.app`), comma-separated if
+you have more than one (a preview + production domain, say), and redeploy
+the backend. Without this, the browser blocks the frontend's requests
+(CORS) — `ALLOWED_ORIGINS` is empty/fail-closed by default.
+
+**Data note:** label photos are sent to PaddleOCR's hosted API (Baidu AI
+Studio); production would self-host the same open-source model.
+
 ## Environment variables
 
 | Variable | Default | Secret? | Notes |
 |----------|---------|---------|-------|
 | `METROS_ENV` | `development` | no | `production` refuses to start with `METROS_AUTH_DISABLED=1` or the default `JWT_SECRET` |
 | `METROS_AUTH_DISABLED` | unset | no | `1` bypasses auth entirely — local dev only, refused in production |
-| `DATABASE_URL` | `sqlite:///data/metroscan.db` | contains DB creds in Compose | Postgres in Compose: `postgresql+psycopg://...` |
-| `UPLOADS_DIR` | `data/uploads` | no | evidence images + crops; a Docker volume in Compose |
+| `DATABASE_URL` | `sqlite:///data/metroscan.db` | contains DB creds in Compose/Render/Railway | Postgres: `postgresql+psycopg://...` |
+| `UPLOADS_DIR` | `data/uploads` | no | evidence images + crops; point this at a persistent disk/volume in production |
 | `JWT_SECRET` | `dev-insecure-secret` | **yes** | must be overridden for any real deployment — the default is publicly known |
 | `JWT_ALG` | `HS256` | no | |
 | `JWT_EXPIRE_MINUTES` | `480` | no | |
 | `MARKER_SIZE_MM` | `40.0` | no | must match `scripts/gen_calibration_card.py --marker-mm`, or every mm figure is wrong |
 | `MAX_CORNER_JITTER_PX` | `2.0` | no | calibration-quality gate |
 | `MAX_EXTRAPOLATION_SIDES` | `4.0` | no | how far from the marker a measurement is still trusted |
+| `METROS_OCR_ENGINE` | `paddleocr_api` | no | `paddleocr_api` (hosted, default) or `tesseract` |
+| `PADDLEOCR_ACCESS_TOKEN` | unset | **yes** | hosted label reader; get one at `aistudio.baidu.com/account/accessToken`; unset → every scan uses the Tesseract fallback automatically |
+| `ALLOWED_ORIGINS` | unset | no | comma-separated origins allowed to call the API cross-origin (backend only) — the Vercel frontend's URL in a split-origin deployment; empty = no cross-origin access |
+| `VITE_API_URL` | unset | no | frontend only (build-time), the backend's URL for a split-origin deployment; empty = same-origin |
 
 ## Data storage and backup
 
@@ -98,8 +145,17 @@ on any new/changed entry; never hardcode legal text in Python.
 
 - Serve the frontend over **HTTPS** in production — some browser APIs the
   photo-capture inputs rely on (and any future live-camera work) are
-  restricted to secure contexts, and it protects the JWT in transit either way.
-- Label reading (Tesseract OCR) is entirely on-device — no outbound network
-  dependency for it, unlike some earlier revisions of this app.
-- `data/uploads` grows with every scan (originals + crops are never deleted)
-  — plan storage and backups accordingly for real inspection volume.
+  restricted to secure contexts, and it protects the JWT in transit either way
+  (Vercel and Render/Railway both do this by default).
+- The API needs a stable outbound path to PaddleOCR's hosted API for the
+  default label reader; without it (or without `PADDLEOCR_ACCESS_TOKEN`),
+  the app still works via the Tesseract fallback, just without the primary
+  reader. PaddleOCR's hosted API enforces a documented quota of 3,000
+  pages/model/day per token — scans of the same photo are cached on disk by
+  image SHA-256 (`<UPLOADS_DIR>/../ocr_cache/`) so retries/re-opens don't
+  count twice against it.
+- `data/uploads` (and `ocr_cache/` alongside it) grow with every scan
+  (originals + crops are never deleted) — plan storage and backups
+  accordingly for real inspection volume, and make sure it's on the
+  persistent disk/volume in production, not the container's ephemeral
+  filesystem.

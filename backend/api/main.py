@@ -35,6 +35,7 @@ from typing import List, Optional
 import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -63,6 +64,16 @@ from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
 app = FastAPI(title="Metros API", version="0.1.0")
+
+_allowed_origins = [o.strip() for o in get_settings().allowed_origins.split(",") if o.strip()]
+if _allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 production_safety_check()
 

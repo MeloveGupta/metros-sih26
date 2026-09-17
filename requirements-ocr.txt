@@ -1,10 +1,8 @@
-# Tesseract OCR (offline label reading, recommended - light, works on any
-# Python incl. 3.14):  pip install -r requirements-ocr.txt
+# Tesseract OCR (offline label reading, used automatically as the fallback
+# when the hosted PaddleOCR API is unconfigured or fails -- or set
+# METROS_OCR_ENGINE=tesseract to use it directly):
 #      brew install tesseract        # macOS  (Linux: apt-get install tesseract-ocr)
-#      pip install pytesseract
+#      pip install -r requirements-ocr.txt
 #    Metros auto-detects and uses Tesseract when the binary is on PATH.
-#
-# For PaddleOCR-VL (experimental branch only, heavier, GPU-accelerated), see
-# requirements-paddle.txt.
 
 pytesseract>=0.3.13

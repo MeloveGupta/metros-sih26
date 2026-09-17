@@ -91,6 +91,12 @@ class Settings:
     # unconfigured or fails.
     ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "paddleocr_api"))
 
+    # Comma-separated origins allowed to call this API cross-origin (e.g. a
+    # Vercel frontend calling a Render/Railway backend). Empty by default --
+    # fail closed, matching this app's posture elsewhere (METROS_AUTH_DISABLED
+    # etc.) -- same-origin deployments (Docker Compose's nginx) need nothing here.
+    allowed_origins: str = field(default_factory=lambda: _env("ALLOWED_ORIGINS", ""))
+
 
 def get_settings() -> Settings:
     """Return a fresh settings snapshot from the current environment."""

@@ -2,6 +2,16 @@
 //
 // The JWT is kept in memory only (never localStorage/sessionStorage) -- a
 // page reload requires signing in again, which is the point.
+//
+// API_BASE is empty by default (same-origin: the Vite dev proxy locally,
+// or nginx/FastAPI serving both from one origin in Docker) -- set
+// VITE_API_URL when the frontend and backend are on different origins
+// (e.g. a Vercel frontend calling a Render/Railway backend).
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+function _url(path) {
+  return `${API_BASE}${path}`;
+}
 
 let _token = null;
 
@@ -26,7 +36,7 @@ async function _asJson(res, failMessage) {
 }
 
 export async function login(email, password) {
-  const res = await fetch("/auth/token", {
+  const res = await fetch(_url("/auth/token"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -48,12 +58,12 @@ export async function scan({ files, productName, category, source, labelText }) 
   if (source) form.append("source", source);
   if (labelText) form.append("label_text", labelText);
 
-  const res = await fetch("/scan", { method: "POST", body: form, headers: _authHeaders() });
+  const res = await fetch(_url("/scan"), { method: "POST", body: form, headers: _authHeaders() });
   return _asJson(res, "Scan failed");
 }
 
 export async function getReviewItems(reportId) {
-  const res = await fetch(`/scans/${reportId}/review-items`, { headers: _authHeaders() });
+  const res = await fetch(_url(`/scans/${reportId}/review-items`), { headers: _authHeaders() });
   const body = await _asJson(res, "Could not load review items");
   return body.items;
 }
@@ -64,22 +74,22 @@ export async function listScans(filters = {}) {
     if (v !== "" && v != null) params.set(k, v);
   }
   const qs = params.toString();
-  const res = await fetch(`/scans${qs ? `?${qs}` : ""}`, { headers: _authHeaders() });
+  const res = await fetch(_url(`/scans${qs ? `?${qs}` : ""}`), { headers: _authHeaders() });
   return _asJson(res, "Could not load scans");
 }
 
 export async function getScan(scanId) {
-  const res = await fetch(`/scans/${scanId}`, { headers: _authHeaders() });
+  const res = await fetch(_url(`/scans/${scanId}`), { headers: _authHeaders() });
   return _asJson(res, "Could not load scan");
 }
 
 export async function getStats() {
-  const res = await fetch("/stats", { headers: _authHeaders() });
+  const res = await fetch(_url("/stats"), { headers: _authHeaders() });
   return _asJson(res, "Could not load stats");
 }
 
-async function _downloadFile(url, filename) {
-  const res = await fetch(url, { headers: _authHeaders() });
+async function _downloadFile(path, filename) {
+  const res = await fetch(_url(path), { headers: _authHeaders() });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Download failed (${res.status})`);
@@ -95,8 +105,8 @@ async function _downloadFile(url, filename) {
   URL.revokeObjectURL(objectUrl);
 }
 
-export async function fetchImageBlobUrl(url) {
-  const res = await fetch(url, { headers: _authHeaders() });
+export async function fetchImageBlobUrl(path) {
+  const res = await fetch(_url(path), { headers: _authHeaders() });
   if (!res.ok) return null;
   const blob = await res.blob();
   return URL.createObjectURL(blob);
@@ -111,7 +121,7 @@ export function downloadDocx(reportId) {
 }
 
 export async function finalize(reportId, { officerName, actions }) {
-  const res = await fetch(`/scans/${reportId}/finalize`, {
+  const res = await fetch(_url(`/scans/${reportId}/finalize`), {
     method: "POST",
     headers: { "Content-Type": "application/json", ..._authHeaders() },
     body: JSON.stringify({ officer_name: officerName, actions }),
