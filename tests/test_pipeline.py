@@ -418,3 +418,82 @@ def test_unknown_category_applies_everything_with_warning(scene_factory):
     manufacturer = next(d for d in report.declarations if d.id == "manufacturer")
     assert manufacturer.status != Status.NOT_APPLICABLE  # no exemption applied
     assert any("category not specified" in w for w in report.extraction.warnings)
+
+
+# --- 2.9: Gemini extraction wiring ---
+
+def test_gemini_backend_populates_extraction_and_tokens(monkeypatch):
+    """End-to-end: run_scan(extract_backend="gemini") threads a successful
+    Gemini call's model + token usage all the way into the report."""
+    import backend.extract.gemini_reader as gr
+    from backend.extract.gemini_reader import GeminiCallResult
+    from backend.rules.engine import FieldExtraction
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+    fake_result = GeminiCallResult(
+        fields=[FieldExtraction(id="mrp", present=True,
+                                value="MRP Rs. 30.00 (incl. of all taxes)")],
+        model_used="gemini-3.1-flash-lite", input_tokens=200, output_tokens=40,
+        thought_tokens=10,
+    )
+    monkeypatch.setattr(gr, "extract_fields_from_images", lambda *a, **kw: fake_result)
+
+    blank = np.full((300, 300, 3), 255, np.uint8)
+    report = run_scan(blank, OcrResult(text="", tokens=[]), extract_backend="gemini",
+                      label_text_provided=False)
+
+    assert report.extraction.backend_used == "gemini"
+    assert report.extraction.gemini_model_used == "gemini-3.1-flash-lite"
+    assert report.extraction.gemini_input_tokens == 200
+    assert report.extraction.gemini_output_tokens == 40
+    assert report.extraction.gemini_thought_tokens == 10
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT
+
+
+def test_label_text_never_reaches_gemini_vision_path(monkeypatch):
+    """The known bug from the deleted Claude reader: a text-only e-commerce
+    listing's blank placeholder image must never be sent to the vision model
+    when label text was pasted -- text is authoritative and complete."""
+    import backend.extract.gemini_reader as gr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("vision path must never run when label text is provided")
+
+    monkeypatch.setattr(gr, "extract_fields_from_images", must_not_be_called)
+
+    blank = np.full((40, 40, 3), 255, np.uint8)
+    text = "MRP Rs. 15.00 (incl. of all taxes)\nNet Qty 50 g"
+    report = run_scan(blank, ocr_from_text(text), extract_backend="gemini",
+                      label_text_provided=True, skip_physical_measurement=True)
+
+    assert report.extraction.backend_used == "label_text"
+
+
+def test_gemini_quota_failure_falls_back_to_ocr_with_warning(scene_factory, monkeypatch):
+    """Both Gemini models exhausting quota must fall back to the OCR/regex
+    result already available from the (Tesseract-sourced) `ocrs` argument,
+    with a visible warning -- never a silently-empty report."""
+    import backend.extract.gemini_reader as gr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+
+    def boom(*a, **kw):
+        raise Exception("Gemini free-tier quota reached on both models")
+
+    monkeypatch.setattr(gr, "extract_fields_from_images", boom)
+
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    text = "MRP Rs. 15.00 (incl. of all taxes)\nNet Qty 50 g"
+    report = run_scan(img, ocr_from_text(text), marker_mm=40.0, extract_backend="gemini",
+                      label_text_provided=False)
+
+    assert report.extraction.backend_used != "gemini"
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT  # regex parser still read the OCR text
+    assert any("Gemini" in w for w in report.extraction.warnings)

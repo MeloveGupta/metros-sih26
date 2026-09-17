@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Compare OCR engines (Tesseract vs. PaddleOCR-VL) on real pack photos.
+"""Compare label readers (Tesseract OCR + regex vs. Gemini vision) on real pack photos.
 
 Usage:
     python scripts/compare_readers.py --photos-dir path/to/photos \\
         --ground-truth path/to/ground_truth.json --out-csv out/compare.csv
 
-For each photo x each engine: reads the image, extracts declarations with
-the existing deterministic regex parsers, and compares against a
-hand-written ground truth. Prints a summary table and writes a CSV with one
-row per (photo, engine).
+For each photo x each engine: reads the image and extracts declarations,
+then compares against a hand-written ground truth. "tesseract" runs OCR then
+the deterministic regex parsers; a "gemini:<model-id>" entry reads the photo
+directly via Gemini vision (needs GEMINI_API_KEY; skipped with a warning if
+unset). Prints a summary table and writes a CSV with one row per (photo,
+engine).
 
 Filling in a ground truth file for 20 real packs:
 1. Photograph front + back of each pack (or just the principal display panel).
@@ -44,11 +46,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from backend.extract import gemini_reader  # noqa: E402
 from backend.extract.dispatch import extract_declarations  # noqa: E402
 from backend.rules.catalog import load_catalog  # noqa: E402
 from backend.vision.ocr import select_ocr_engine  # noqa: E402
 
-_ENGINES = ("tesseract",)
+_ENGINES = ("tesseract", f"gemini:{gemini_reader.DEFAULT_MODEL}")
 
 
 def _normalize(s: str) -> str:
@@ -73,16 +76,32 @@ def compare(photos_dir: Path, ground_truth: Dict[str, Dict[str, str]],
             continue
 
         for engine in engines:
-            t0 = time.monotonic()
-            ocrs, backend_used, warning = select_ocr_engine([img], None, engine=engine)
-            elapsed = time.monotonic() - t0
+            if engine.startswith("gemini:"):
+                if not gemini_reader.gemini_available():
+                    print(f"warning: GEMINI_API_KEY not set -- skipping {engine!r} "
+                         f"for {filename}", file=sys.stderr)
+                    continue
+                t0 = time.monotonic()
+                outcome = extract_declarations("", catalog, backend="gemini", images=[img])
+                elapsed = time.monotonic() - t0
+                if not outcome.used_gemini:
+                    print(f"warning: {filename} fell back off Gemini "
+                         f"({outcome.gemini_error}) -- recording under 'tesseract' "
+                         f"instead of {engine!r}", file=sys.stderr)
+                    recorded_engine = "tesseract"
+                else:
+                    recorded_engine = f"gemini:{outcome.gemini_model_used}"
+            else:
+                t0 = time.monotonic()
+                ocrs, backend_used, warning = select_ocr_engine([img], None, engine=engine)
+                elapsed = time.monotonic() - t0
+                if backend_used != engine:
+                    print(f"warning: {filename} requested {engine!r} but got "
+                         f"{backend_used!r} ({warning}) -- recording under "
+                         f"{backend_used!r}, not {engine!r}", file=sys.stderr)
+                recorded_engine = backend_used
+                outcome = extract_declarations(ocrs[0].text, catalog)
 
-            if backend_used != engine:
-                print(f"warning: {filename} requested {engine!r} but got "
-                     f"{backend_used!r} ({warning}) -- recording under "
-                     f"{backend_used!r}, not {engine!r}", file=sys.stderr)
-
-            outcome = extract_declarations(ocrs[0].text, catalog)
             fields = {f.id: f for f in outcome.fields}
 
             detected = sum(1 for decl_id in expected if fields.get(decl_id) and fields[decl_id].present)
@@ -93,7 +112,7 @@ def compare(photos_dir: Path, ground_truth: Dict[str, Dict[str, str]],
             )
             rows.append({
                 "photo": filename,
-                "engine": backend_used,
+                "engine": recorded_engine,
                 "declarations_expected": len(expected),
                 "declarations_detected": detected,
                 "values_matched": matched,
