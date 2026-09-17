@@ -28,15 +28,17 @@ function storeSession(session) {
   }
 }
 
-// A real phone camera photo is typically 3000-4000px and several MB --
-// decoding + uploading several of those at once is what pushed the backend
-// close to Render's free-tier 512 MB cap and made mobile uploads silently
-// stall/fail. The backend already downsizes to 1600px before sending to
-// Gemini anyway (see backend/extract/gemini_reader.py), so shrinking here
-// costs no real accuracy while cutting upload size and memory pressure a
-// lot. Falls back to the original file untouched on any failure (an
-// unsupported format, a very old browser) -- never worse than before.
-const MAX_PHOTO_DIMENSION = 1920;
+// A real phone camera photo is typically 3000-4000px and several MB.
+// Shrinking here helps two separate things: upload size/memory pressure
+// (the backend already downsizes to 1600px before sending to Gemini
+// anyway -- see backend/extract/gemini_reader.py), and -- the bigger cost
+// in practice -- ArUco calibration's own CPU time, which scales with image
+// area (backend/vision/scale.py runs up to six detection passes per
+// image). Capped well below Gemini's own 1600px target so it never
+// upsizes what we send. Falls back to the original file untouched on any
+// resize failure (an unsupported format, a very old browser) -- never
+// worse than before.
+const MAX_PHOTO_DIMENSION = 1280;
 
 async function resizeImageFile(file, maxDim = MAX_PHOTO_DIMENSION, quality = 0.85) {
   if (!file.type || !file.type.startsWith("image/")) return file;

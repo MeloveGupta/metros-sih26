@@ -39,6 +39,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..core import storage
 from ..core.config import get_settings, marker_size_mismatch_warning, production_safety_check
@@ -256,7 +257,12 @@ async def scan(
         roles = ["listing"]
 
     report_id = str(uuid.uuid4())
-    evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
+    # Blocking (network I/O to Supabase Storage or local disk) -- run off the
+    # event loop so a slow upload doesn't stall every other request this
+    # single worker is handling, Render's own health check included.
+    evidence_images = await run_in_threadpool(
+        _save_uploads, report_id, filenames, raw_bytes, roles=roles
+    )
 
     settings = get_settings()
     # Gated on gemini_available() too: without GEMINI_API_KEY configured,
@@ -272,7 +278,10 @@ async def scan(
         ocrs = [ocr_from_text("") for _ in decoded]
         ocr_backend_used, ocr_warning, extract_backend = "tesseract", None, "gemini"
     else:
-        ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
+        # Tesseract OCR -- CPU-bound, same event-loop concern as run_scan below.
+        ocrs, ocr_backend_used, ocr_warning = await run_in_threadpool(
+            select_ocr_engine, decoded, label_text
+        )
         extract_backend = "regex"
 
     product = Product(name=product_name, category=category, source=source)
@@ -280,16 +289,23 @@ async def scan(
                                             name=current_user.name or current_user.sub,
                                             role=current_user.role))
     try:
-        report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
-                          product=product, inspection=inspection,
-                          image_file=filenames[0],
-                          ocr_backend_used=ocr_backend_used,
-                          ocr_warning=ocr_warning,
-                          extract_backend=extract_backend,
-                          label_text_provided=bool(label_text),
-                          category=category,
-                          report_id=report_id, evidence_images=evidence_images,
-                          save_crops=True, skip_physical_measurement=is_listing)
+        # The dominant cost of a scan: ArUco calibration alone runs up to six
+        # detection passes per image (see backend/vision/scale.py) plus rule
+        # evaluation -- squarely CPU-bound, and can take tens of seconds on a
+        # throttled host. Off the event loop, so it can't starve health
+        # checks or other requests this worker is handling concurrently.
+        report = await run_in_threadpool(
+            run_scan, decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
+            product=product, inspection=inspection,
+            image_file=filenames[0],
+            ocr_backend_used=ocr_backend_used,
+            ocr_warning=ocr_warning,
+            extract_backend=extract_backend,
+            label_text_provided=bool(label_text),
+            category=category,
+            report_id=report_id, evidence_images=evidence_images,
+            save_crops=True, skip_physical_measurement=is_listing,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
