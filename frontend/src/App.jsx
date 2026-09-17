@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { logout, scan } from "./api.js";
 import Dashboard from "./Dashboard.jsx";
 import History from "./History.jsx";
@@ -66,6 +66,57 @@ async function resizeImageFile(file, maxDim = MAX_PHOTO_DIMENSION, quality = 0.8
   }
 }
 
+// Persists in-progress photo picks across an unexpected reload -- same idea
+// as api.js/App.jsx's session persistence, but for the shots the officer
+// has already picked before submitting. Android will often "discard" a
+// backgrounded tab (freeing its memory while the native camera app is in
+// the foreground) and silently reload it on return: sessionStorage
+// survives that, plain React state does not, so without this an officer
+// who's already added several photos loses them the moment they take one
+// more via the in-page camera button.
+const SHOTS_KEY = "metros_pending_shots";
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function dataUrlToFile(dataUrl, name) {
+  const blob = await (await fetch(dataUrl)).blob();
+  return new File([blob], name, { type: blob.type });
+}
+
+function loadStoredShotsMeta() {
+  try {
+    const raw = sessionStorage.getItem(SHOTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistShots(shots) {
+  try {
+    const encoded = await Promise.all(
+      shots.map(async (s) => ({ name: s.file.name, dataUrl: await fileToDataUrl(s.file) }))
+    );
+    sessionStorage.setItem(SHOTS_KEY, JSON.stringify(encoded));
+  } catch {
+    // Quota exceeded or storage unavailable -- degrade to the old
+    // behaviour (photos just won't survive an unexpected reload) rather
+    // than breaking the scan flow over a persistence nicety.
+    try { sessionStorage.removeItem(SHOTS_KEY); } catch { /* ignore */ }
+  }
+}
+
+function clearStoredShots() {
+  try { sessionStorage.removeItem(SHOTS_KEY); } catch { /* ignore */ }
+}
+
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
   const [source, setSource] = useState("retail_pack"); // retail_pack | ecommerce_listing
@@ -76,12 +127,36 @@ function ScanForm({ onReport }) {
   const [err, setErr] = useState("");
   const isListing = source === "ecommerce_listing";
 
+  // Restore any photos left over from a reload like the one described above.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const meta = loadStoredShotsMeta();
+      if (!meta.length) return;
+      const restored = [];
+      for (const m of meta) {
+        try {
+          const file = await dataUrlToFile(m.dataUrl, m.name);
+          restored.push({ file, url: URL.createObjectURL(file) });
+        } catch {
+          // one corrupted entry shouldn't lose the rest
+        }
+      }
+      if (!cancelled && restored.length) setShots(restored);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   async function addFiles(fileList) {
     const arr = Array.from(fileList || []).filter(Boolean);
     if (!arr.length) return;
     setErr("");
     const resized = await Promise.all(arr.map((f) => resizeImageFile(f)));
-    setShots((prev) => [...prev, ...resized.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
+    setShots((prev) => {
+      const next = [...prev, ...resized.map((f) => ({ file: f, url: URL.createObjectURL(f) }))];
+      persistShots(next);
+      return next;
+    });
   }
 
   function removeShot(i) {
@@ -89,6 +164,7 @@ function ScanForm({ onReport }) {
       const next = [...prev];
       const [gone] = next.splice(i, 1);
       if (gone) URL.revokeObjectURL(gone.url);
+      persistShots(next);
       return next;
     });
   }
@@ -104,9 +180,11 @@ function ScanForm({ onReport }) {
     setBusy(true);
     setErr("");
     try {
-      onReport(await scan({
+      const result = await scan({
         files: shots.map((s) => s.file), productName, category, source, labelText,
-      }));
+      });
+      clearStoredShots();
+      onReport(result);
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
