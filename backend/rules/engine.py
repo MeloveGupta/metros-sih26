@@ -44,9 +44,9 @@ class FieldExtraction:
     format_detail: Optional[str] = None
     applicable: bool = True
     # True when detection alone isn't enough to trust the value (e.g. an
-    # unconfirmed generic name from the regex fallback, or an LLM value that
-    # doesn't appear anywhere in the OCR text) -- forces not_assessable
-    # regardless of `present`.
+    # unconfirmed generic name -- the regex parser can't tell a "generic
+    # name" line apart from a brand name without an officer-supplied hint)
+    # -- forces not_assessable regardless of `present`.
     needs_confirmation: bool = False
     confirmation_reason: Optional[str] = None
 

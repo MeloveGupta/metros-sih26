@@ -1,12 +1,13 @@
-"""Tests for the extraction backend dispatcher (regex / llm / auto)."""
+"""Tests for the extraction dispatcher (backend/extract/dispatch.py)."""
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-from backend.core.errors import ExtractionError
 from backend.extract.dispatch import extract_declarations
-from backend.extract.llm import llm_available
+from backend.extract.gemini_reader import GeminiCallResult
 from backend.rules.catalog import load_catalog
+from backend.rules.engine import FieldExtraction
 
 LABEL = "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g"
 
@@ -16,102 +17,73 @@ def catalog():
     return load_catalog()
 
 
-def test_regex_backend(catalog):
-    outcome = extract_declarations(LABEL, catalog, backend="regex")
+def test_extract_declarations_uses_regex_parsers(catalog):
+    outcome = extract_declarations(LABEL, catalog)
     fields = {f.id: f for f in outcome.fields}
     assert fields["mrp"].present and fields["mrp"].format_pass is True
     assert fields["net_quantity"].present
-    assert outcome.used_llm is False
+    assert outcome.text_read == LABEL
 
 
-def test_auto_falls_back_to_regex_when_llm_unavailable(catalog):
-    # No anthropic SDK / credentials in the test env -> auto must still work.
-    outcome = extract_declarations(LABEL, catalog, backend="auto")
+def test_extract_declarations_passes_common_name_hint(catalog):
+    outcome = extract_declarations("Tasty Chips\n" + LABEL, catalog,
+                                   common_name_hint="Tasty Chips")
+    common_name = next(f for f in outcome.fields if f.id == "common_name")
+    assert common_name.present is True
+    assert common_name.value == "Tasty Chips"
+    assert common_name.needs_confirmation is False
+
+
+def test_extract_declarations_unknown_backend_raises(catalog):
+    from backend.core.errors import ExtractionError
+    with pytest.raises(ExtractionError):
+        extract_declarations(LABEL, catalog, backend="not-a-real-backend")
+
+
+def test_extract_declarations_gemini_backend_falls_back_when_unavailable(catalog, monkeypatch):
+    """No GEMINI_API_KEY configured -> silently use regex, same as the
+    default backend (never a silently-empty report over a missing key)."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    outcome = extract_declarations(LABEL, catalog, backend="gemini")
+    assert outcome.used_gemini is False
     fields = {f.id: f for f in outcome.fields}
-    assert fields["mrp"].present  # regex path produced results
-    assert outcome.used_llm is False
+    assert fields["mrp"].present is True
 
 
-def test_auto_falls_back_to_ocr_regex_when_llm_call_fails(catalog, monkeypatch):
-    """A configured-but-broken LLM (e.g. a rejected key) must not silently
-    score an empty report -- it must fall back to OCR + regex and say so."""
-    import backend.extract.llm as llm_mod
+def test_extract_declarations_gemini_success_runs_deterministic_validators(catalog, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    fake_result = GeminiCallResult(
+        fields=[FieldExtraction(id="mrp", present=True, value="not a real MRP format")],
+        model_used="gemini-3.1-flash-lite", input_tokens=10, output_tokens=5,
+    )
+    import backend.extract.gemini_reader as gr
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+    monkeypatch.setattr(gr, "extract_fields_from_images", lambda *a, **kw: fake_result)
 
-    monkeypatch.setattr(llm_mod, "llm_available", lambda: True)
-
-    def _boom(*a, **kw):
-        raise ExtractionError("simulated LLM auth failure")
-
-    monkeypatch.setattr(llm_mod, "extract_fields_llm", _boom)
-    monkeypatch.setattr(llm_mod, "extract_fields_from_images", _boom)
-
-    outcome = extract_declarations(LABEL, catalog, backend="auto")
-    assert outcome.used_llm is False
-    assert outcome.llm_error and "simulated" in outcome.llm_error
-    fields = {f.id: f for f in outcome.fields}
-    assert fields["mrp"].present  # regex fallback still worked on the given text
-
-
-# --- 2.7: country of origin & format checks are code-decided, never LLM-decided ---
-
-def test_llm_inferred_country_of_origin_not_trusted(catalog, monkeypatch):
-    """Even an inferred/guessed value must be rejected when the text has no
-    import/origin cue at all -- the LLM never gets to assert presence alone."""
-    import backend.extract.llm as llm_mod
-    from backend.rules.engine import FieldExtraction
-
-    monkeypatch.setattr(llm_mod, "llm_available", lambda: True)
-
-    def _fake(text, catalog, ids):
-        return [
-            FieldExtraction(id=d, present=(d == "country_of_origin"),
-                            value="~India" if d == "country_of_origin" else None,
-                            applicable=True)
-            for d in ids
-        ]
-
-    monkeypatch.setattr(llm_mod, "extract_fields_llm", _fake)
-
-    text = "Tasty Chips\nNet Qty 90 g"  # no import/origin cue anywhere
-    outcome = extract_declarations(text, catalog, backend="llm")
-    origin = next(f for f in outcome.fields if f.id == "country_of_origin")
-    assert origin.present is False
-    assert origin.applicable is False
-
-
-def test_llm_format_pass_ignored_for_malformed_mrp(catalog, monkeypatch):
-    """A malformed MRP value must still fail even if the LLM claims
-    format_pass=True -- the deterministic validator decides, not the LLM."""
-    import backend.extract.llm as llm_mod
-    from backend.rules.engine import FieldExtraction
-
-    monkeypatch.setattr(llm_mod, "llm_available", lambda: True)
-
-    def _fake(text, catalog, ids):
-        out = []
-        for d in ids:
-            if d == "mrp":
-                out.append(FieldExtraction(id=d, present=True, value="MRP Rs. 20.00",
-                                          format_pass=True))
-            else:
-                out.append(FieldExtraction(id=d, present=False))
-        return out
-
-    monkeypatch.setattr(llm_mod, "extract_fields_llm", _fake)
-
-    outcome = extract_declarations("irrelevant text", catalog, backend="llm")
+    img = np.full((50, 50, 3), 255, dtype=np.uint8)
+    outcome = extract_declarations("", catalog, backend="gemini", images=[img])
+    assert outcome.used_gemini is True
+    assert outcome.gemini_model_used == "gemini-3.1-flash-lite"
+    assert outcome.gemini_input_tokens == 10
     mrp = next(f for f in outcome.fields if f.id == "mrp")
+    # Gemini's own format claim is never trusted -- the deterministic
+    # validator re-checked "not a real MRP format" and must fail it.
     assert mrp.format_pass is False
-    assert mrp.format_detail
 
 
-def test_llm_backend_raises_when_unavailable(catalog):
-    if llm_available():
-        pytest.skip("LLM is configured in this environment")
-    with pytest.raises(ExtractionError):
-        extract_declarations(LABEL, catalog, backend="llm")
+def test_extract_declarations_gemini_failure_falls_back_to_regex(catalog, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    import backend.extract.gemini_reader as gr
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
 
+    def boom(*a, **kw):
+        raise Exception("both models exhausted their free-tier quota")
 
-def test_unknown_backend_raises(catalog):
-    with pytest.raises(ExtractionError):
-        extract_declarations(LABEL, catalog, backend="nope")
+    monkeypatch.setattr(gr, "extract_fields_from_images", boom)
+    img = np.full((50, 50, 3), 255, dtype=np.uint8)
+    outcome = extract_declarations("", catalog, backend="gemini", images=[img])
+    assert outcome.used_gemini is False
+    assert "quota" in outcome.gemini_error
+    # extract_fields() still ran (over empty text here) -- never an exception
+    # propagating out of extract_declarations.
+    assert outcome.fields

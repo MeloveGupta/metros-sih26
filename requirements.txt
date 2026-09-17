@@ -1,7 +1,6 @@
-# Core backend deps. OCR (PaddleOCR) is intentionally NOT here — it has no
-# wheels on newer Python and is only needed for on-device text reading; install
-# it separately with `pip install -r requirements-ocr.txt` if you want it.
-# Without it, use the label-text path or the LLM extractor.
+# Core backend deps. Tesseract (the local OCR fallback) is intentionally NOT
+# here -- install it separately with `pip install -r requirements-ocr.txt`.
+# Without it, use the label-text path.
 #
 # Pins are lower-bounds so the resolver can pick wheels that exist for your
 # Python version (3.11–3.14+).
@@ -19,6 +18,9 @@ Pillow>=11.0
 
 # --- Field extraction (offline) ---
 regex>=2024.11
+
+# --- Field extraction (Gemini vision fast-path, free tier) ---
+google-genai>=1.0
 
 # --- Rules ---
 PyYAML>=6.0
@@ -38,9 +40,6 @@ psycopg[binary]>=3.2
 # --- Auth ---
 pyjwt>=2.10
 bcrypt>=4.2
-
-# --- Optional LLM extraction fast-path (auth via ANTHROPIC_API_KEY) ---
-# anthropic>=0.69
 
 # --- Dev / test ---
 pytest>=8.3

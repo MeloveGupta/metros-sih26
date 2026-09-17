@@ -1,9 +1,8 @@
 """Runtime configuration, sourced from environment variables.
 
 Every setting has a working default so the pipeline runs with no environment
-at all (SQLite, auth-secret placeholder, no AI reader key). Secrets (JWT
-secret, the Anthropic API key) must be overridden in production via `.env`
-(see `.env.example`).
+at all (SQLite, auth-secret placeholder, on-device OCR). Secrets (the JWT
+secret) must be overridden in production via `.env` (see `.env.example`).
 """
 from __future__ import annotations
 
@@ -83,6 +82,21 @@ class Settings:
     uploads_dir: Path = field(
         default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
     )
+
+    # Label reader: "gemini" (default, this experimental branch) uses Google
+    # Gemini's free tier to read declarations straight off the photos -- see
+    # backend/extract/gemini_reader.py; it needs GEMINI_API_KEY, and silently
+    # falls back to "tesseract" (needs requirements-ocr.txt) whenever the key
+    # is missing or a call fails, so a scan is never silently empty either
+    # way. See backend/vision/ocr.py's select_ocr_engine() and
+    # backend/api/main.py's /scan handler for exactly how the fallback works.
+    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "gemini"))
+
+    # Comma-separated origins allowed to call this API cross-origin (e.g. a
+    # Vercel frontend calling a Render/Railway backend). Empty by default --
+    # fail closed, matching this app's posture elsewhere (METROS_AUTH_DISABLED
+    # etc.) -- same-origin deployments (Docker Compose's nginx) need nothing here.
+    allowed_origins: str = field(default_factory=lambda: _env("ALLOWED_ORIGINS", ""))
 
 
 def get_settings() -> Settings:

@@ -1,0 +1,15 @@
+{
+  "pack01_front.jpg": {
+    "mrp": "MRP Rs. 45.00 (incl. of all taxes)",
+    "net_quantity": "Net Qty 90 g"
+  },
+  "pack01_back.jpg": {
+    "manufacturer": "Manufactured by: FoodCo Pvt Ltd, Plot 12, Pune, Maharashtra 411001",
+    "mfg_date": "Mfg Aug 2026",
+    "consumer_care": "Consumer care: FoodCo Care, 12 MG Road, Pune 411001, care@foodco.in, 1800-123-4567"
+  },
+  "pack02_front.jpg": {
+    "mrp": "MRP Rs. 120.00 (incl. of all taxes)",
+    "net_quantity": "Net Wt 250 g"
+  }
+}

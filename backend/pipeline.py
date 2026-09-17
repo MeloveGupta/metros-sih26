@@ -525,6 +525,8 @@ def run_scan(
     image_file: str = "upload.jpg",
     captured_at: Optional[datetime] = None,
     catalog: Optional[RuleCatalog] = None,
+    ocr_backend_used: str = "tesseract",
+    ocr_warning: Optional[str] = None,
     extract_backend: str = "regex",
     label_text_provided: bool = False,
     common_name: Optional[str] = None,
@@ -589,18 +591,31 @@ def run_scan(
                 cal = c  # remember an uncalibrated result as the fallback
     marker_image = images[cal_idx]
 
-    # 2. Extraction over ALL images (vision) or combined OCR text (regex).
+    # 2. Extraction over the combined OCR/label text (regex by default; Gemini
+    #    vision when requested). Known-bug fix: pasted label text is always
+    #    authoritative and complete, so images are only ever handed to the
+    #    vision path when there is NO label text -- a blank placeholder image
+    #    (the API layer's text-only e-commerce-listing stand-in) never reaches
+    #    the model, regardless of what's in `images`.
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
-    outcome = extract_declarations(combined_text, catalog, backend=extract_backend,
-                                   images=list(images), common_name_hint=common_name)
+    image_hashes = (
+        [_sha256_of_image(img) for img in images]
+        if extract_backend == "gemini" and not label_text_provided else None
+    )
+    outcome = extract_declarations(
+        combined_text, catalog, backend=extract_backend,
+        images=(images if not label_text_provided else None),
+        image_hashes=image_hashes,
+        common_name_hint=common_name,
+    )
     fields = outcome.fields
-    unreadable = not outcome.used_llm and not (outcome.text_read or "").strip()
-    if outcome.used_llm:
-        extraction_backend_used = "llm"
-    elif label_text_provided:
+    unreadable = not outcome.used_gemini and not (outcome.text_read or "").strip()
+    if label_text_provided:
         extraction_backend_used = "label_text"
+    elif outcome.used_gemini:
+        extraction_backend_used = "gemini"
     else:
-        extraction_backend_used = "ocr_regex"
+        extraction_backend_used = ocr_backend_used
 
     # Font measurement (Rule 7) needs glyph boxes from the MARKER image's OCR.
     # In the vision path OCR was skipped for speed, so if a card was found but we
@@ -667,6 +682,16 @@ def run_scan(
     )
     readability = _readability_findings(catalog, combined_text)
 
+    if ocr_warning:
+        extraction_warnings.append(ocr_warning)
+    if outcome.gemini_error:
+        # Carries "Gemini free-tier quota reached..." verbatim when that's the
+        # actual cause (see gemini_reader._call_with_model_fallback); any other
+        # Gemini failure still surfaces here so a fallback to OCR is never silent.
+        extraction_warnings.append(
+            f"Gemini extraction unavailable, fell back to Tesseract OCR + regex: "
+            f"{outcome.gemini_error}"
+        )
     if skip_physical_measurement:
         extraction_warnings.append(
             "letter height (Rule 7) and placement (Rule 8) are not assessed for an "
@@ -677,7 +702,7 @@ def run_scan(
             "product category not specified; no food/cosmetic exemptions applied"
         )
     if unreadable:
-        # No text could be read from any source (LLM failed/unavailable AND
+        # No text could be read from any source (no pasted label text AND
         # OCR found nothing): declarations are unknown, not "absent".
         for d in declarations:
             d.status = Status.NOT_ASSESSABLE
@@ -689,8 +714,11 @@ def run_scan(
 
     extraction = Extraction(
         backend_used=extraction_backend_used,
-        llm_error=outcome.llm_error,
         warnings=extraction_warnings,
+        gemini_model_used=outcome.gemini_model_used,
+        gemini_input_tokens=outcome.gemini_input_tokens,
+        gemini_output_tokens=outcome.gemini_output_tokens,
+        gemini_thought_tokens=outcome.gemini_thought_tokens,
     )
 
     # 5. Assemble report. Evidence images are the real uploaded files when the

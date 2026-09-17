@@ -5,8 +5,9 @@ Useful for the field/demo workflow and for generating report artifacts:
     python -m backend.cli scan photo.jpg --label-file label.txt --out-dir out/
     python -m backend.cli scan photo.jpg --marker-mm 40 --panel-cm2 250
 
-If PaddleOCR is installed, `--label-*` may be omitted and text is read from the
-image. Millimetre verdicts require a calibration marker in the photo.
+`--label-*` may be omitted and text is read from the image instead via
+Tesseract (`METROS_OCR_ENGINE=tesseract`, the default). Millimetre verdicts
+require a calibration marker in the photo.
 """
 from __future__ import annotations
 
@@ -17,11 +18,10 @@ from typing import List, Optional
 
 import cv2
 
-from .core.errors import MetrosError
 from .pipeline import run_scan
 from .reports.render import render_html, render_json, render_pdf
 from .schemas.report import Product, Status
-from .vision.ocr import ocr_from_text, paddle_ocr, tesseract_available, tesseract_ocr
+from .vision.ocr import select_ocr_engine
 
 _STATUS_MARK = {
     Status.COMPLIANT: "OK  ",
@@ -77,16 +77,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     elif args.label_text:
         label_text = args.label_text
 
-    if label_text is not None:
-        ocr = ocr_from_text(label_text)
-    elif tesseract_available():
-        ocr = tesseract_ocr(image)
-    else:
-        try:
-            ocr = paddle_ocr(image)
-        except MetrosError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
+    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine([image], label_text)
+    ocr = ocrs[0]
+    if ocr_warning:
+        print(f"warning: {ocr_warning}", file=sys.stderr)
 
     report = run_scan(
         image, ocr,
@@ -97,7 +91,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         panel_polygon_px=_parse_polygon_px(args.panel_polygon_px),
         molded=args.molded,
         image_file=Path(args.image).name,
-        extract_backend="auto" if args.llm else "regex",
+        ocr_backend_used=ocr_backend_used,
+        ocr_warning=ocr_warning,
         label_text_provided=label_text is not None,
     )
 
@@ -132,8 +127,6 @@ def build_parser() -> argparse.ArgumentParser:
                            "measured through the calibration (overrides --panel-cm2)")
     scan.add_argument("--molded", action="store_true",
                       help="declarations are blown/molded (higher thresholds)")
-    scan.add_argument("--llm", action="store_true",
-                      help="use the Claude extraction fast-path (needs ANTHROPIC_API_KEY)")
     scan.add_argument("--product", help="product name")
     scan.add_argument("--out-dir", help="write JSON/HTML/PDF report here")
     scan.set_defaults(func=_cmd_scan)

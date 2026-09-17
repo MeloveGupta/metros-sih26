@@ -1,10 +1,16 @@
-"""OCR adapter.
+"""OCR adapters.
 
 The pipeline consumes an `OcrResult` (full text + tokens with pixel boxes).
-The default backend is PaddleOCR (offline, per-character/line boxes); it is
-imported lazily so the rest of the system runs without it. `ocr_from_text` lets
-callers/tests supply text (and optional boxes) directly — useful for the CLI's
-"paste the label text" mode and for deterministic testing.
+Tesseract (word-level boxes) is the only OCR *engine* here -- it's used
+directly when `METROS_OCR_ENGINE=tesseract`, as the automatic fallback
+otherwise, and always for Rule 7/8's boxes regardless of which reader
+extracted the declaration text (see `pipeline.py`'s marker-token fallback).
+A vision-based reader (`backend/extract/gemini_reader.py`) plugs in at the
+*extraction* layer instead, not here -- it returns structured declaration
+fields directly, not plain text for these regex-facing engines to feed.
+`ocr_from_text` lets callers/tests supply text (and optional boxes)
+directly — useful for the CLI's "paste the label text" mode and for
+deterministic testing.
 """
 from __future__ import annotations
 
@@ -91,28 +97,42 @@ def tesseract_ocr(image: np.ndarray, lang: str = "eng") -> OcrResult:
     return OcrResult(text=text, tokens=tokens)
 
 
-def paddle_ocr(image: np.ndarray, lang: str = "en") -> OcrResult:
-    """Run PaddleOCR over a BGR image. Raises OcrError if PaddleOCR is absent."""
-    try:
-        from paddleocr import PaddleOCR
-    except Exception as exc:  # ImportError or backend load failure
-        raise OcrError(
-            "PaddleOCR is not installed. Install `paddleocr` + `paddlepaddle` "
-            "(see requirements.txt), or use ocr_from_text() to supply label text. "
-            f"Underlying error: {exc}"
-        ) from exc
+def engine_available(engine: str) -> bool:
+    """True if the named OCR engine ("tesseract") is installed and usable
+    right now."""
+    return tesseract_available()
 
-    engine = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
-    raw = engine.ocr(image, cls=True)
-    tokens: List[Token] = []
-    lines: List[str] = []
-    for page in raw or []:
-        for entry in page or []:
-            box, (txt, conf) = entry
-            xs = [p[0] for p in box]
-            ys = [p[1] for p in box]
-            bbox = (int(min(xs)), int(min(ys)),
-                    int(max(xs) - min(xs)), int(max(ys) - min(ys)))
-            tokens.append(Token(text=txt, bbox=bbox, confidence=float(conf)))
-            lines.append(txt)
-    return OcrResult(text="\n".join(lines), tokens=tokens)
+
+def _tesseract_per_image(images) -> List[OcrResult]:
+    ocrs = []
+    for img in images:
+        try:
+            ocrs.append(tesseract_ocr(img))
+        except OcrError:
+            ocrs.append(ocr_from_text(""))
+    return ocrs
+
+
+def select_ocr_engine(
+    images: List[np.ndarray],
+    label_text: Optional[str],
+    engine: Optional[str] = None,  # accepted for call-site stability; Tesseract is the only OCR engine now
+) -> Tuple[List[OcrResult], str, Optional[str]]:
+    """Choose and run an OCR engine for a scan's images.
+
+    Returns (ocrs, backend_used, warning): `ocrs` is a list of OcrResult
+    aligned 1:1 with `images` (as `run_scan()` expects); `backend_used` is
+    "tesseract" / "label_text" (see schemas.report.Extraction.backend_used);
+    `warning` is a human-readable string when Tesseract isn't available at
+    all, else None. Never raises -- a scan never silently returns nothing.
+    Callers using the Gemini vision reader instead don't call this function
+    at all -- see `backend/api/main.py`'s `/scan` handler.
+    """
+    if label_text:
+        blanks = [ocr_from_text("") for _ in images[1:]]
+        return [ocr_from_text(label_text)] + blanks, "label_text", None
+
+    if tesseract_available():
+        return _tesseract_per_image(images), "tesseract", None
+    return ([ocr_from_text("") for _ in images], "tesseract",
+            "Tesseract OCR is not installed; no text could be read")

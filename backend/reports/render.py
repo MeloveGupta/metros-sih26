@@ -140,12 +140,16 @@ def render_docx(report: Report, out_path: Path) -> Path:
     )
 
     if report.extraction:
-        reader = {"llm": "AI reader", "label_text": "pasted label text",
-                 "ocr_regex": "OCR fallback"}.get(report.extraction.backend_used, "OCR fallback")
-        line = f"Reader: {reader}"
-        if report.extraction.llm_error:
-            line += f" — AI reader failed: {report.extraction.llm_error}"
-        doc.add_paragraph(line)
+        reader = {"tesseract": "Tesseract OCR",
+                 "label_text": "pasted label text",
+                 "gemini": "Gemini (vision)"}.get(
+                     report.extraction.backend_used, "Tesseract OCR")
+        doc.add_paragraph(f"Reader: {reader}")
+        if report.extraction.gemini_model_used:
+            tokens = (f"in={report.extraction.gemini_input_tokens}, "
+                     f"out={report.extraction.gemini_output_tokens}, "
+                     f"thought={report.extraction.gemini_thought_tokens}")
+            doc.add_paragraph(f"Gemini model: {report.extraction.gemini_model_used} ({tokens})")
         for w in report.extraction.warnings:
             doc.add_paragraph(f"Warning: {w}")
 

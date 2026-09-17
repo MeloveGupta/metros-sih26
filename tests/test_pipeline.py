@@ -70,8 +70,7 @@ def test_ecommerce_listing_skips_rule7_rule8_and_exempts_mfg_date(scene_factory)
     text = "MRP Rs. 45.00 (incl. of all taxes)\nNet Qty 90 g\nMfg Aug 2026"
     blank = np.full((300, 300, 3), 255, np.uint8)
 
-    report = run_scan(blank, ocr_from_text(text), extract_backend="regex",
-                      skip_physical_measurement=True)
+    report = run_scan(blank, ocr_from_text(text), skip_physical_measurement=True)
 
     assert report.calibration.verdict == CalibrationVerdict.REJECTED
     mfg = next(d for d in report.declarations if d.id == "mfg_date")
@@ -185,42 +184,6 @@ def test_rule7_excludes_calibration_card_text(rotate):
     )
 
 
-def test_llm_failure_falls_back_to_ocr(monkeypatch):
-    """A configured-but-failing LLM (bad/rejected credential) must not produce
-    a silent all-empty report: it must fall back to real OCR + regex."""
-    if not tesseract_available():
-        pytest.skip("tesseract not installed")
-    import backend.extract.llm as llm_mod
-    from backend.core.errors import ExtractionError
-
-    monkeypatch.setattr(llm_mod, "llm_available", lambda: True)
-
-    def _boom(*a, **kw):
-        raise ExtractionError("simulated LLM auth failure")
-
-    monkeypatch.setattr(llm_mod, "extract_fields_llm", _boom)
-    monkeypatch.setattr(llm_mod, "extract_fields_from_images", _boom)
-
-    img = np.full((400, 900, 3), 255, np.uint8)
-    cv2.putText(img, "MRP Rs. 45.00 incl. of all taxes", (20, 80),
-               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 3, cv2.LINE_AA)
-    cv2.putText(img, "Net Qty 200 g", (20, 160),
-               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 3, cv2.LINE_AA)
-    cv2.putText(img, "Mfg 05/2026", (20, 240),
-               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 3, cv2.LINE_AA)
-
-    # Simulate the API layer: OCR was skipped up-front because the LLM path
-    # looked available.
-    report = run_scan(img, OcrResult(text="", tokens=[]), extract_backend="auto")
-
-    assert report.extraction.backend_used == "ocr_regex"
-    assert report.extraction.llm_error and "simulated" in report.extraction.llm_error
-    mrp = next(d for d in report.declarations if d.id == "mrp")
-    assert mrp.status == Status.COMPLIANT
-    net_qty = next(d for d in report.declarations if d.id == "net_quantity")
-    assert net_qty.status == Status.COMPLIANT
-
-
 def test_fully_compliant_with_common_name_supplied(scene_factory):
     """A perfect label + officer-supplied generic name -> compliant disposition.
 
@@ -229,7 +192,7 @@ def test_fully_compliant_with_common_name_supplied(scene_factory):
     """
     img, _ = scene_factory(marker_mm=40.0, side_px=400)
     report = run_scan(img, ocr_from_text(_FULL_LABEL), marker_mm=40.0,
-                      common_name="tomato ketchup", extract_backend="regex")
+                      common_name="tomato ketchup")
 
     common_name = next(d for d in report.declarations if d.id == "common_name")
     assert common_name.status == Status.COMPLIANT
@@ -241,8 +204,7 @@ def test_needs_officer_review_when_only_gaps_are_not_assessable(scene_factory):
     can't confirm the generic name, so that one item is not_assessable -- and
     the overall disposition is needs_officer_review, not potential_non_compliance."""
     img, _ = scene_factory(marker_mm=40.0, side_px=400)
-    report = run_scan(img, ocr_from_text(_FULL_LABEL), marker_mm=40.0,
-                      extract_backend="regex")
+    report = run_scan(img, ocr_from_text(_FULL_LABEL), marker_mm=40.0)
 
     common_name = next(d for d in report.declarations if d.id == "common_name")
     assert common_name.status == Status.NOT_ASSESSABLE
@@ -253,10 +215,10 @@ def test_needs_officer_review_when_only_gaps_are_not_assessable(scene_factory):
 
 
 def test_no_readable_text_needs_officer_review():
-    """No text from any source (LLM unavailable, OCR/label text empty) must
+    """No text from any source (no pasted label text, OCR found nothing) must
     become not_assessable + needs_officer_review, never a wall of not_detected."""
     blank = np.full((300, 300, 3), 255, np.uint8)
-    report = run_scan(blank, OcrResult(text="", tokens=[]), extract_backend="regex")
+    report = run_scan(blank, OcrResult(text="", tokens=[]))
 
     assert report.disposition == Status.NEEDS_OFFICER_REVIEW
     assert report.declarations, "catalog declarations still enumerated"
@@ -296,7 +258,7 @@ def test_placement_clear_space_passes_with_no_nearby_text(scene_factory):
 
 def test_placement_clear_space_not_assessable_without_bbox():
     report = run_scan(np.full((300, 300, 3), 255, np.uint8),
-                      ocr_from_text("Net Qty 200 g"), extract_backend="regex")
+                      ocr_from_text("Net Qty 200 g"))
     clear_space = next(p for p in report.placement if p.id == "placement_clear_space")
     assert clear_space.status == Status.NOT_ASSESSABLE
 
@@ -373,7 +335,7 @@ def test_blur_warns_and_upgrades_not_detected_to_not_assessable(scene_factory):
     img, _ = scene_factory(marker_mm=40.0, side_px=400)
     blurred = cv2.GaussianBlur(img, (25, 25), sigmaX=12.0)
     text = "MRP Rs. 45.00 (incl. of all taxes)"  # no consumer_care mentioned
-    report = run_scan(blurred, ocr_from_text(text), extract_backend="regex")
+    report = run_scan(blurred, ocr_from_text(text))
 
     assert any("image_quality" in w and "blurry" in w for w in report.extraction.warnings)
     consumer_care = next(d for d in report.declarations if d.id == "consumer_care")
@@ -384,7 +346,7 @@ def test_blur_warns_and_upgrades_not_detected_to_not_assessable(scene_factory):
 def test_language_flag_when_neither_latin_nor_devanagari(scene_factory):
     img, _ = scene_factory(marker_mm=40.0, side_px=400)
     text = "净含量 200克 价格 45.00元"  # Chinese only -- no Latin, no Devanagari
-    report = run_scan(img, ocr_from_text(text), marker_mm=40.0, extract_backend="regex")
+    report = run_scan(img, ocr_from_text(text), marker_mm=40.0)
 
     lang = next(r for r in report.readability if r.id == "readability_language")
     assert lang.status == Status.NOT_ASSESSABLE
@@ -456,3 +418,82 @@ def test_unknown_category_applies_everything_with_warning(scene_factory):
     manufacturer = next(d for d in report.declarations if d.id == "manufacturer")
     assert manufacturer.status != Status.NOT_APPLICABLE  # no exemption applied
     assert any("category not specified" in w for w in report.extraction.warnings)
+
+
+# --- 2.9: Gemini extraction wiring ---
+
+def test_gemini_backend_populates_extraction_and_tokens(monkeypatch):
+    """End-to-end: run_scan(extract_backend="gemini") threads a successful
+    Gemini call's model + token usage all the way into the report."""
+    import backend.extract.gemini_reader as gr
+    from backend.extract.gemini_reader import GeminiCallResult
+    from backend.rules.engine import FieldExtraction
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+    fake_result = GeminiCallResult(
+        fields=[FieldExtraction(id="mrp", present=True,
+                                value="MRP Rs. 30.00 (incl. of all taxes)")],
+        model_used="gemini-3.1-flash-lite", input_tokens=200, output_tokens=40,
+        thought_tokens=10,
+    )
+    monkeypatch.setattr(gr, "extract_fields_from_images", lambda *a, **kw: fake_result)
+
+    blank = np.full((300, 300, 3), 255, np.uint8)
+    report = run_scan(blank, OcrResult(text="", tokens=[]), extract_backend="gemini",
+                      label_text_provided=False)
+
+    assert report.extraction.backend_used == "gemini"
+    assert report.extraction.gemini_model_used == "gemini-3.1-flash-lite"
+    assert report.extraction.gemini_input_tokens == 200
+    assert report.extraction.gemini_output_tokens == 40
+    assert report.extraction.gemini_thought_tokens == 10
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT
+
+
+def test_label_text_never_reaches_gemini_vision_path(monkeypatch):
+    """The known bug from the deleted Claude reader: a text-only e-commerce
+    listing's blank placeholder image must never be sent to the vision model
+    when label text was pasted -- text is authoritative and complete."""
+    import backend.extract.gemini_reader as gr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("vision path must never run when label text is provided")
+
+    monkeypatch.setattr(gr, "extract_fields_from_images", must_not_be_called)
+
+    blank = np.full((40, 40, 3), 255, np.uint8)
+    text = "MRP Rs. 15.00 (incl. of all taxes)\nNet Qty 50 g"
+    report = run_scan(blank, ocr_from_text(text), extract_backend="gemini",
+                      label_text_provided=True, skip_physical_measurement=True)
+
+    assert report.extraction.backend_used == "label_text"
+
+
+def test_gemini_quota_failure_falls_back_to_ocr_with_warning(scene_factory, monkeypatch):
+    """Both Gemini models exhausting quota must fall back to the OCR/regex
+    result already available from the (Tesseract-sourced) `ocrs` argument,
+    with a visible warning -- never a silently-empty report."""
+    import backend.extract.gemini_reader as gr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    monkeypatch.setattr(gr, "gemini_available", lambda: True)
+
+    def boom(*a, **kw):
+        raise Exception("Gemini free-tier quota reached on both models")
+
+    monkeypatch.setattr(gr, "extract_fields_from_images", boom)
+
+    img, _ = scene_factory(marker_mm=40.0, side_px=400)
+    text = "MRP Rs. 15.00 (incl. of all taxes)\nNet Qty 50 g"
+    report = run_scan(img, ocr_from_text(text), marker_mm=40.0, extract_backend="gemini",
+                      label_text_provided=False)
+
+    assert report.extraction.backend_used != "gemini"
+    mrp = next(d for d in report.declarations if d.id == "mrp")
+    assert mrp.status == Status.COMPLIANT  # regex parser still read the OCR text
+    assert any("Gemini" in w for w in report.extraction.warnings)

@@ -210,9 +210,14 @@ class RuleCatalogInfo(BaseModel):
 class Extraction(BaseModel):
     """How the label text was actually read for this report."""
 
-    backend_used: Literal["llm", "ocr_regex", "label_text"] = "ocr_regex"
-    llm_error: Optional[str] = None
+    backend_used: Literal["tesseract", "label_text", "gemini"] = "tesseract"
     warnings: List[str] = Field(default_factory=list)
+    # Set only when the Gemini vision/text path actually ran (not on a
+    # regex/Tesseract-only scan, and not when Gemini fell back mid-scan).
+    gemini_model_used: Optional[str] = None
+    gemini_input_tokens: Optional[int] = None
+    gemini_output_tokens: Optional[int] = None
+    gemini_thought_tokens: Optional[int] = None
 
 
 LIMITATIONS_TEXT = (

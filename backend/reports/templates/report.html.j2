@@ -83,8 +83,14 @@
 {% if r.extraction %}
 <p class="note">
   <b>Reader:</b>
-  {{ "AI reader" if r.extraction.backend_used == "llm" else ("pasted label text" if r.extraction.backend_used == "label_text" else "OCR fallback") }}
-  {% if r.extraction.llm_error %} — AI reader failed: {{ r.extraction.llm_error }}{% endif %}
+  {% if r.extraction.backend_used == "label_text" %}pasted label text
+  {% elif r.extraction.backend_used == "gemini" %}Gemini (vision)
+  {% else %}Tesseract OCR{% endif %}
+  {% if r.extraction.gemini_model_used %}
+    · {{ r.extraction.gemini_model_used }}
+    (in={{ r.extraction.gemini_input_tokens }}, out={{ r.extraction.gemini_output_tokens }},
+    thought={{ r.extraction.gemini_thought_tokens }})
+  {% endif %}
   {% for w in r.extraction.warnings %} · {{ w }}{% endfor %}
 </p>
 {% endif %}

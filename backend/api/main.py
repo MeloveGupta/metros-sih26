@@ -35,6 +35,7 @@ from typing import List, Optional
 import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -57,17 +58,22 @@ from ..db.repository import (
 from ..pipeline import EvidenceImageInput, run_scan
 from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
-from ..vision.ocr import (
-    OcrResult,
-    ocr_from_text,
-    paddle_ocr,
-    tesseract_available,
-    tesseract_ocr,
-)
+from ..extract import gemini_reader
+from ..vision.ocr import engine_available, ocr_from_text, select_ocr_engine
 from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
 app = FastAPI(title="Metros API", version="0.1.0")
+
+_allowed_origins = [o.strip() for o in get_settings().allowed_origins.split(",") if o.strip()]
+if _allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 production_safety_check()
 
@@ -87,8 +93,16 @@ def get_session():
 
 @app.get("/health")
 def health():
-    from ..extract.llm import llm_available
-    return {"status": "ok", "version": app.version, "llm_available": llm_available()}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "version": app.version,
+        "ocr_engine": settings.ocr_engine,
+        "ocr_engine_available": engine_available(settings.ocr_engine),
+        "gemini_api_key_configured": gemini_reader.gemini_available(),
+        "gemini_model": gemini_reader.DEFAULT_MODEL,
+        "gemini_fallback_model": gemini_reader.FALLBACK_MODEL,
+    }
 
 
 class TokenRequest(BaseModel):
@@ -174,20 +188,6 @@ def _save_uploads(report_id: str, filenames: List[str], raw: List[bytes],
     return saved
 
 
-def _ocr_image(img, label_text: Optional[str]) -> OcrResult:
-    if label_text:
-        return ocr_from_text(label_text)
-    if tesseract_available():
-        try:
-            return tesseract_ocr(img)
-        except MetrosError:
-            return ocr_from_text("")
-    try:
-        return paddle_ocr(img)
-    except MetrosError:
-        return ocr_from_text("")
-
-
 @app.post("/scan")
 async def scan(
     images: List[UploadFile] = File(default=[]),
@@ -197,7 +197,6 @@ async def scan(
     product_name: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
-    llm: bool = Form(True),
     session=Depends(get_session),
     current_user: CurrentUser = Depends(require_role("officer", "admin")),
 ):
@@ -244,15 +243,22 @@ async def scan(
     report_id = str(uuid.uuid4())
     evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
-    # OCR is only needed when the LLM vision path is NOT used (it reads images
-    # directly). Skipping Tesseract when AI is on removes N slow OCR passes.
-    from ..extract.llm import llm_available
-    use_llm = llm is not False and llm_available()
-    if use_llm and not label_text:
+    settings = get_settings()
+    # Gated on gemini_available() too: without GEMINI_API_KEY configured,
+    # stay on the Tesseract path rather than skip OCR and produce an empty
+    # report (Gemini's own OCR-fallback inside dispatch.py only helps once
+    # text has already been read from *some* source).
+    use_gemini = (settings.ocr_engine == "gemini" and not label_text
+                 and gemini_reader.gemini_available())
+    if use_gemini:
+        # The vision path reads the images directly -- skip Tesseract entirely
+        # for speed (Rule 7/8's own marker-token fallback in run_scan() covers
+        # word/line boxes lazily if a calibration card is actually found).
         ocrs = [ocr_from_text("") for _ in decoded]
+        ocr_backend_used, ocr_warning, extract_backend = "tesseract", None, "gemini"
     else:
-        ocrs = [_ocr_image(img, label_text if i == 0 else None)
-                for i, img in enumerate(decoded)]
+        ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
+        extract_backend = "regex"
 
     product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,
@@ -262,7 +268,9 @@ async def scan(
         report = run_scan(decoded, ocrs, marker_mm=marker_mm, dict_name=dict_name,
                           product=product, inspection=inspection,
                           image_file=filenames[0],
-                          extract_backend="regex" if llm is False else "auto",
+                          ocr_backend_used=ocr_backend_used,
+                          ocr_warning=ocr_warning,
+                          extract_backend=extract_backend,
                           label_text_provided=bool(label_text),
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,
