@@ -65,16 +65,22 @@ roles gate every route. For local dev without touching auth, set
 
 ## OCR / label reading
 
-Two ways to read a label:
+Three ways to read a label:
 - **Paste the text** — the UI's label-text field / CLI's `--label-file`; works
   everywhere, no extra install, and skips OCR entirely.
 - **Tesseract OCR** — `make install-ocr`; used automatically to read text from
   photos when no label text is pasted, so a scan never silently returns
   nothing.
+- **Gemini vision** (this experimental branch only, see below) — reads
+  declarations straight off the photos when `METROS_OCR_ENGINE=gemini` and
+  `GEMINI_API_KEY` is set; falls back to Tesseract otherwise.
 
 Scale, panel-area, and letter-height measurement (Rule 7) are always done in
-code (OpenCV geometry) — no model ever measures or decides compliance;
-extraction is always the deterministic regex parsers in `backend/extract/`.
+code (OpenCV geometry) — no model ever measures or decides compliance.
+Extraction is the deterministic regex parsers in `backend/extract/` by
+default; on this branch, Gemini's own extracted values still pass through
+the same deterministic format validators and reconciliation logic before
+anything is scored.
 
 Single scan without the server:
 
@@ -94,11 +100,69 @@ the rule-catalog hot-update process.
 
 ## Experimental branch: Gemini free tier
 
-`experiment/paddleocr-vl` (this branch) is switching from PaddleOCR's hosted
-API to Google Gemini's free tier (Google AI Studio) as the vision-based
-label reader — no GPU, no Anthropic/Baidu/Hugging Face dependency. Work in
-progress; this section is rewritten once the Gemini reader lands.
-**Never merged into `main`.**
+`experiment/paddleocr-vl` (this branch) reads labels via Google Gemini's
+free tier (Google AI Studio) instead of PaddleOCR's hosted API — no GPU, no
+Anthropic/Baidu/Hugging Face dependency. **Never merged into `main`.**
+
+Gemini reads declarations straight off the photos (vision), bypassing OCR +
+regex for what it can read; a deterministic rule engine and format
+validators still have the final say — Gemini only extracts, it never
+decides compliance, and its own `format_pass` claim is never trusted (see
+`backend/extract/dispatch.py`'s reconciliation functions).
+
+**Setup:**
+```bash
+pip install -r requirements.txt   # includes google-genai
+```
+Get a key at https://aistudio.google.com/apikey, then set in `.env`:
+```
+METROS_OCR_ENGINE=gemini          # default on this branch
+GEMINI_API_KEY=...
+METROS_GEMINI_MODEL=              # optional override, default gemini-3.1-flash-lite
+METROS_GEMINI_FALLBACK_MODEL=     # optional override, default gemini-3.8-flash
+```
+Without a key configured, `METROS_OCR_ENGINE=gemini` transparently falls
+back to the Tesseract path — a scan is never silently empty.
+
+**`/health`** reports `gemini_api_key_configured` (bool, never the key
+itself) plus the two configured model IDs.
+
+**Free-tier limits:** no fixed numbers are published by Google — rate
+limits depend on your Google AI Studio project's usage tier. Check your
+project's live quota at https://aistudio.google.com. On a 429/quota error,
+Metros backs off once with jitter and retries the same model, then tries
+the fallback model once, then falls back to Tesseract + regex with a
+visible warning (`extraction.warnings`) — never a hard failure.
+
+**Tests:**
+```bash
+make test                    # mocked Gemini tests run by default, no key needed
+GEMINI_API_KEY=... pytest -m gemini_live   # one real 2-photo scan
+python scripts/compare_readers.py --photos-dir ... --ground-truth ...  # includes a gemini:<model-id> engine
+```
+
+**Known limitations:**
+- The Interactions API (`client.interactions.create`) exposes token usage
+  via `interaction.usage.total_{input,output,thought}_tokens`, confirmed
+  against the installed `google-genai` SDK's own type stubs — read
+  defensively (`getattr(..., None)`) in case a future SDK version reshapes
+  `Usage`.
+- `max_output_tokens` is a hard cutoff (including Gemini's own "thinking"
+  tokens); a very verbose/malformed model response can still fail JSON
+  parsing and trigger the OCR/regex fallback.
+- One request per scan (all photos together) keeps this within the free
+  tier's per-request limits, but a scan with many photos still counts as
+  one request's worth of image tokens, which can be substantial.
+- Results are cached on disk by the combined image-set SHA-256
+  (`data/gemini_cache/`) so re-scanning the same photos never spends quota
+  twice — but this means editing `rules/lmpc-2011.yaml`'s declaration list
+  and re-scanning the *same* photos won't re-query Gemini either; delete the
+  cache file (or the whole `data/gemini_cache/` directory) to force a fresh
+  read.
+
+**Data note:** free-tier prompts may be used by Google to improve its
+products; use demo packs only. Production would use a self-hosted open
+model.
 
 ## The moat — Rule 7 in millimetres
 

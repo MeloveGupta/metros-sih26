@@ -1,11 +1,11 @@
 # Deployment
 
 Metros is a web app: the backend needs a database and local disk (or a
-persistent volume) for evidence storage. The label reader is on-device
-Tesseract for now (a vision-based Gemini reader, no GPU needed, is being
-added back on this experimental branch). This doc covers running it
-locally, via Docker Compose, and deploying to Vercel (frontend) + Render or
-Railway (backend).
+persistent volume) for evidence storage. On this experimental branch, the
+label reader is Google Gemini's free tier (needs `GEMINI_API_KEY`, no GPU),
+falling back to on-device Tesseract whenever the key is unset or a call
+fails. This doc covers running it locally, via Docker Compose, and deploying
+to Vercel (frontend) + Render or Railway (backend).
 
 ## System requirements
 
@@ -97,9 +97,9 @@ you have more than one (a preview + production domain, say), and redeploy
 the backend. Without this, the browser blocks the frontend's requests
 (CORS) — `ALLOWED_ORIGINS` is empty/fail-closed by default.
 
-**Data note:** with `METROS_OCR_ENGINE=tesseract`, label reading is entirely
-on-device — no photos leave the deployment for this. (This section is
-updated again once the Gemini vision reader lands on this branch.)
+**Data note:** free-tier prompts may be used by Google to improve its
+products; use demo packs only. Production would use a self-hosted open
+model.
 
 ## Environment variables
 
@@ -115,7 +115,10 @@ updated again once the Gemini vision reader lands on this branch.)
 | `MARKER_SIZE_MM` | `40.0` | no | must match `scripts/gen_calibration_card.py --marker-mm`, or every mm figure is wrong |
 | `MAX_CORNER_JITTER_PX` | `2.0` | no | calibration-quality gate |
 | `MAX_EXTRAPOLATION_SIDES` | `4.0` | no | how far from the marker a measurement is still trusted |
-| `METROS_OCR_ENGINE` | `tesseract` | no | `tesseract` (only engine right now) |
+| `METROS_OCR_ENGINE` | `gemini` | no | `gemini` (this branch's default; needs `GEMINI_API_KEY`, falls back to `tesseract` when unset/failing) or `tesseract` |
+| `GEMINI_API_KEY` | unset | **yes** | Google AI Studio key (https://aistudio.google.com/apikey); backend only, never logged/exposed |
+| `METROS_GEMINI_MODEL` | `gemini-3.1-flash-lite` | no | primary model; override only if you know the exact current model ID (see `backend/extract/gemini_reader.py`'s module docstring) |
+| `METROS_GEMINI_FALLBACK_MODEL` | `gemini-3.8-flash` | no | tried once if the primary model's free-tier quota is exhausted |
 | `ALLOWED_ORIGINS` | unset | no | comma-separated origins allowed to call the API cross-origin (backend only) — the Vercel frontend's URL in a split-origin deployment; empty = no cross-origin access |
 | `VITE_API_URL` | unset | no | frontend only (build-time), the backend's URL for a split-origin deployment; empty = same-origin |
 
@@ -144,8 +147,14 @@ on any new/changed entry; never hardcode legal text in Python.
   photo-capture inputs rely on (and any future live-camera work) are
   restricted to secure contexts, and it protects the JWT in transit either way
   (Vercel and Render/Railway both do this by default).
-- Label reading (Tesseract) is entirely on-device right now — no outbound
-  network dependency for it.
+- Label reading needs a stable outbound path to Google's Gemini API when
+  `METROS_OCR_ENGINE=gemini` (the default on this branch) and
+  `GEMINI_API_KEY` is set — without either, the app still works via the
+  Tesseract fallback (fully on-device, no outbound dependency), just without
+  the primary vision reader. Gemini results are cached on disk by the image
+  set's combined SHA-256 (`data/gemini_cache/`, alongside `data/uploads`) so
+  retries/re-opens of the same photos don't count against the free-tier
+  quota twice.
 - `data/uploads` grows with every scan (originals + crops are never
   deleted) — plan storage and backups accordingly for real inspection
   volume, and make sure it's on the persistent disk/volume in production,
