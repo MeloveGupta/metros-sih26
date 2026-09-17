@@ -47,7 +47,7 @@ append-only officer verdict.
 - Product identity: name, brand, category, batch/lot (if read), source
   (`retail_pack` / `ecommerce_listing`), SKU/barcode value (as text only).
 - Reader banner: which OCR engine actually produced this report
-  (`extraction.backend_used`: `tesseract` / `paddleocr_vl` / `label_text`) and
+  (`extraction.backend_used`: `tesseract` / `label_text`) and
   warnings (e.g. blurry/glare image, no category specified, an OCR-engine
   fallback, or — for an e-commerce listing — that Rule 7/8 aren't assessed
   at all).

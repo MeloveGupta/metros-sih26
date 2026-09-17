@@ -41,8 +41,7 @@ frontend/    React app (sign-in, scan, history, dashboard, report view)
 rules/       lmpc-2011.yaml (rule catalog)
 scripts/     calibration-card generator, user seeding
 docker/      Dockerfiles
-tests/       pytest suite (some tests require Tesseract installed; one
-             requires PaddleOCR-VL, see below)
+tests/       pytest suite (some tests require Tesseract installed)
 ```
 
 ## Quick start (local)
@@ -66,14 +65,12 @@ roles gate every route. For local dev without touching auth, set
 
 ## OCR / label reading
 
-Three ways to read a label:
+Two ways to read a label:
 - **Paste the text** — the UI's label-text field / CLI's `--label-file`; works
   everywhere, no extra install, and skips OCR entirely.
-- **PaddleOCR-VL** (default, `METROS_OCR_ENGINE=paddleocr_vl`) — this
-  experimental branch only, see the section below.
-- **Tesseract OCR** — `make install-ocr`; the automatic fallback (or set
-  `METROS_OCR_ENGINE=tesseract` to use it directly), so a scan never
-  silently returns nothing.
+- **Tesseract OCR** — `make install-ocr`; used automatically to read text from
+  photos when no label text is pasted, so a scan never silently returns
+  nothing.
 
 Scale, panel-area, and letter-height measurement (Rule 7) are always done in
 code (OpenCV geometry) — no model ever measures or decides compliance;
@@ -95,94 +92,14 @@ docker compose up --build     # api + frontend + postgres
 See [`docs/deployment.md`](docs/deployment.md) for env vars, data storage, and
 the rule-catalog hot-update process.
 
-## Experimental branch: PaddleOCR-VL (local only)
+## Experimental branch: hosted PaddleOCR API
 
-`experiment/paddleocr-vl` (this branch) replaces nothing else about the app
--- it's a drop-in alternate label reader, entirely local, no internet or API
-key. **It is never merged into `main`.**
-
-### Setup
-
-Built and tested against: Ubuntu 24.04, NVIDIA RTX 4070 Laptop (8GB VRAM,
-compute capability 8.6), driver 580.173.02, CUDA 13.0.
-
-```bash
-make install-paddle     # paddlepaddle-gpu + paddleocr[doc-parser] -- see
-                         # requirements-paddle.txt for the exact pinned
-                         # commands (and the CPU-only alternative)
-```
-
-`METROS_OCR_ENGINE` (in `.env` or the environment) picks the engine:
-
-```bash
-METROS_OCR_ENGINE=paddleocr_vl   # default -- falls back to Tesseract automatically
-METROS_OCR_ENGINE=tesseract      # use Tesseract directly, no PaddleOCR-VL attempt
-```
-
-`GET /health` reports which engine is configured and whether it's actually
-available right now (`ocr_engine`, `ocr_engine_available`). Every report
-also carries `extraction.backend_used` (which engine actually read that
-scan) and, if PaddleOCR-VL fell back to Tesseract, a warning saying why.
-
-Run the one real-model integration test (skipped by default, see
-`tests/test_paddle_integration.py`):
-
-```bash
-pytest -m paddle
-```
-
-Compare engines on your own photos:
-
-```bash
-python scripts/compare_readers.py --photos-dir path/to/photos \
-    --ground-truth path/to/ground_truth.json --out-csv out/compare.csv
-```
-
-### Known limitations
-
-- **Verified on this branch's own reference hardware (RTX 4070 Laptop,
-  8GB VRAM, driver 580.173.02, CUDA 13.0): `pipeline.predict()` did not
-  return within 5 minutes for a single small (900x400px, two lines of text)
-  synthetic label image.** Install itself succeeded cleanly (real sizes
-  below); model construction from cached weights was fast (~2.2s); the
-  actual inference call is where it hangs or is extremely slow — confirmed
-  twice (once via `tests/test_paddle_integration.py`, once via an isolated
-  diagnostic script with a hard `timeout 300` that fired, both showing the
-  same behavior: `predict()` never returning). This was **not** root-caused
-  within this branch's scope — possible causes include the untested cu126
-  wheel / CUDA 13.0 driver combination, a missing engine-config entry (the
-  run logged `"Bucketed engine_config has no entry for resolved engine
-  'paddle_dynamic'"`, which may or may not be related), or something
-  specific to this GPU's compute capability. Real per-image inference
-  timing is therefore **not available** from this branch as shipped — this
-  is the honest result of the verification this README asked for, not a
-  documented or claimed number.
-- **Real install footprint** (this environment): `paddlepaddle-gpu` +
-  `paddleocr[doc-parser]` + deps came to **~3.1GB** in `site-packages`
-  (mostly the `paddle` package itself, bundling CUDA/cuDNN/cuBLAS/etc.
-  runtimes), plus a **~2.0GB** model-weights cache at
-  `~/.paddlex/official_models/` (`PaddleOCR-VL-1.6` and `PP-DocLayoutV3`,
-  the layout-detection model it also pulls in) — **~5.1GB total**, close to
-  the ~3-5GB estimate in step 0 (which was explicitly not a documented
-  figure). The GPU wheel download itself was also badly throttled from
-  `paddlepaddle.org.cn`'s CDN on this network (fluctuating between
-  <0.1MB/s and ~10MB/s over roughly 2 hours for ~3GB) — budget real time
-  for this, it is not a fast `pip install`.
-- **No documented VRAM minimum.** Neither PaddleOCR-VL doc page states one
-  -- behavior on a smaller GPU, or CPU-only, is unverified by this branch.
-- **No line/word boxes from PaddleOCR-VL.** Its documented output is
-  block/paragraph-level, too coarse for Rule 7 (letter height) and Rule 8
-  (placement). Those keep using Tesseract on the calibrated image via the
-  existing marker-token fallback in `backend/pipeline.py` — unchanged from
-  before this branch, and true regardless of which engine reads the
-  declaration text.
-- **No published speed benchmark**, on any hardware, from either doc page —
-  and, per the finding above, this branch cannot supply one either.
-- **CUDA 13.0 against a cu126-built wheel** (`requirements-paddle.txt`) is
-  an assumption (NVIDIA driver backward compatibility), not a documented,
-  tested combination — and is a plausible contributor to the hang above.
-- **Local testing only.** No Docker/Vercel/deployment changes were made or
-  are planned on this branch.
+`experiment/paddleocr-vl` (this branch) is switching from local PaddleOCR-VL
+inference (which needed a GPU and never returned a result within 5 minutes
+in testing — see prior commits) to PaddleOCR's official hosted API, so the
+backend can run on ordinary Render/Railway-style hosting with no GPU. Work
+in progress; this section is rewritten once the hosted reader lands.
+**Never merged into `main`.**
 
 ## The moat — Rule 7 in millimetres
 

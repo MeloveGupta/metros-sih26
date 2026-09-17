@@ -83,7 +83,7 @@
 {% if r.extraction %}
 <p class="note">
   <b>Reader:</b>
-  {{ "PaddleOCR-VL" if r.extraction.backend_used == "paddleocr_vl" else ("pasted label text" if r.extraction.backend_used == "label_text" else "Tesseract OCR") }}
+  {{ "pasted label text" if r.extraction.backend_used == "label_text" else "Tesseract OCR" }}
   {% for w in r.extraction.warnings %} · {{ w }}{% endfor %}
 </p>
 {% endif %}

@@ -1,4 +1,4 @@
-.PHONY: help venv install install-ocr install-paddle test run seed card frontend-dev frontend-build up down
+.PHONY: help venv install install-ocr test run seed card frontend-dev frontend-build up down
 
 PY ?= python3
 VENV ?= .venv
@@ -7,7 +7,6 @@ BIN := $(VENV)/bin
 help:
 	@echo "make install        create venv and install core backend deps"
 	@echo "make install-ocr    add the Tesseract OCR fallback (optional; needs the tesseract binary on PATH)"
-	@echo "make install-paddle add PaddleOCR-VL (experimental branch only; needs a supported GPU/CPU, see requirements-paddle.txt)"
 	@echo "make test           run the backend test suite"
 	@echo "make seed           create default users in the database"
 	@echo "make card           generate the printable ArUco calibration card"
@@ -24,9 +23,6 @@ install: $(BIN)/python
 
 install-ocr: $(BIN)/python
 	$(BIN)/pip install -r requirements-ocr.txt
-
-install-paddle: $(BIN)/python
-	$(BIN)/pip install -r requirements-paddle.txt
 
 test:
 	$(BIN)/python -m pytest tests/ -q
