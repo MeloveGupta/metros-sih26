@@ -166,15 +166,36 @@ export default function ReportView({ report, onUpdate }) {
   const s = report.summary;
   const cal = report.calibration;
   const fa = report.font_analysis;
-  const [reviewItems, setReviewItems] = useState(null); // null = loading
+  const [reviewItems, setReviewItems] = useState(null); // null = loading/error, array = loaded
+  const [reviewError, setReviewError] = useState(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setReviewItems(null);
-    getReviewItems(report.report_id).then((items) => !cancelled && setReviewItems(items))
-      .catch(() => !cancelled && setReviewItems([]));
+    setReviewError(null);
+
+    // One silent retry after a transient hiccup (a cold pooled DB connection,
+    // a dropped request right after the scan) before surfacing an error --
+    // but NEVER treat a failed fetch as "nothing to review": that would
+    // silently unlock report downloads (see the gate below) before an
+    // officer actually reviewed the flagged items.
+    async function load(attempt) {
+      try {
+        const items = await getReviewItems(report.report_id);
+        if (!cancelled) setReviewItems(items);
+      } catch (e) {
+        if (cancelled) return;
+        if (attempt === 0) {
+          setTimeout(() => !cancelled && load(1), 1000);
+        } else {
+          setReviewError(e.message || String(e));
+        }
+      }
+    }
+    load(0);
     return () => { cancelled = true; };
-  }, [report.report_id]);
+  }, [report.report_id, retryNonce]);
   const kpis = [
     ["Checked", s.checked, ""],
     ["Compliant", s.compliant, "s-compliant"],
@@ -320,11 +341,21 @@ export default function ReportView({ report, onUpdate }) {
         </>
       )}
 
-      {reviewItems === null
-        ? <p className="muted small">Loading review items…</p>
-        : <Verification report={report} items={reviewItems} onFinalized={onUpdate} />}
+      {reviewError ? (
+        <p className="err" role="alert">
+          Could not load review items: {reviewError}.{" "}
+          <button type="button" className="ghost" onClick={() => setRetryNonce((n) => n + 1)}>
+            Retry
+          </button>
+        </p>
+      ) : reviewItems === null ? (
+        <p className="muted small">Loading review items…</p>
+      ) : (
+        <Verification report={report} items={reviewItems} onFinalized={onUpdate} />
+      )}
 
-      {/* Download only after the officer finalizes (or when nothing needs review). */}
+      {/* Download only after the officer finalizes (or when nothing needs
+          review) -- gated on a successful load, never on an error. */}
       {reviewItems !== null && (report.finalized_by || reviewItems.length === 0) && (
         <div className="dlrow">
           <button type="button" className="dl"
