@@ -83,11 +83,13 @@ class Settings:
         default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
     )
 
-    # OCR engine used to read label text from photos: "tesseract" (needs
-    # requirements-ocr.txt) for now -- a hosted engine is being added back
-    # on this experimental branch. See backend/vision/ocr.py's
-    # select_ocr_engine().
-    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "tesseract"))
+    # OCR engine used to read label text from photos: "paddleocr_api"
+    # (default on this experimental branch -- PaddleOCR's hosted API, needs
+    # PADDLEOCR_ACCESS_TOKEN, no GPU/model download) or "tesseract" (needs
+    # requirements-ocr.txt). See backend/vision/ocr.py's select_ocr_engine(),
+    # which falls back to Tesseract automatically if the hosted API is
+    # unconfigured or fails.
+    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "paddleocr_api"))
 
 
 def get_settings() -> Settings:

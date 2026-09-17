@@ -199,8 +199,9 @@ export default function ReportView({ report, onUpdate }) {
       </p>
 
       {report.extraction && (
-        <p className="readerline">
-          Reader: <b>{report.extraction.backend_used === "label_text" ? "pasted label text"
+        <p className={`readerline${report.extraction.backend_used !== "paddleocr_api" ? " readerline-fallback" : ""}`}>
+          Reader: <b>{report.extraction.backend_used === "paddleocr_api" ? "PaddleOCR API"
+            : report.extraction.backend_used === "label_text" ? "pasted label text"
             : "Tesseract OCR"}</b>
           {report.extraction.warnings.map((w) => <span className="muted" key={w}> · {w}</span>)}
         </p>
