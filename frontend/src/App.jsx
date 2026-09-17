@@ -28,6 +28,42 @@ function storeSession(session) {
   }
 }
 
+// A real phone camera photo is typically 3000-4000px and several MB --
+// decoding + uploading several of those at once is what pushed the backend
+// close to Render's free-tier 512 MB cap and made mobile uploads silently
+// stall/fail. The backend already downsizes to 1600px before sending to
+// Gemini anyway (see backend/extract/gemini_reader.py), so shrinking here
+// costs no real accuracy while cutting upload size and memory pressure a
+// lot. Falls back to the original file untouched on any failure (an
+// unsupported format, a very old browser) -- never worse than before.
+const MAX_PHOTO_DIMENSION = 1920;
+
+async function resizeImageFile(file, maxDim = MAX_PHOTO_DIMENSION, quality = 0.85) {
+  if (!file.type || !file.type.startsWith("image/")) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1) {
+      bitmap.close?.();
+      return file; // already small enough
+    }
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file;
+    const name = file.name.replace(/\.\w+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
   const [source, setSource] = useState("retail_pack"); // retail_pack | ecommerce_listing
@@ -38,11 +74,12 @@ function ScanForm({ onReport }) {
   const [err, setErr] = useState("");
   const isListing = source === "ecommerce_listing";
 
-  function addFiles(fileList) {
+  async function addFiles(fileList) {
     const arr = Array.from(fileList || []).filter(Boolean);
     if (!arr.length) return;
     setErr("");
-    setShots((prev) => [...prev, ...arr.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
+    const resized = await Promise.all(arr.map((f) => resizeImageFile(f)));
+    setShots((prev) => [...prev, ...resized.map((f) => ({ file: f, url: URL.createObjectURL(f) }))]);
   }
 
   function removeShot(i) {
