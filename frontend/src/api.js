@@ -1,7 +1,11 @@
 // Thin API client for the Metros backend.
 //
-// The JWT is kept in memory only (never localStorage/sessionStorage) -- a
-// page reload requires signing in again, which is the point.
+// The JWT lives in sessionStorage: it survives a page reload (e.g. a
+// low-memory mobile browser killing and reloading the tab mid-scan, which
+// otherwise dumped an officer straight back to Login) but is cleared the
+// moment the tab is actually closed -- not localStorage, which would
+// outlive the tab/browser session entirely and is a materially bigger
+// blast radius if the page were ever compromised via XSS.
 //
 // API_BASE is empty by default (same-origin: the Vite dev proxy locally,
 // or nginx/FastAPI serving both from one origin in Docker) -- set
@@ -13,18 +17,29 @@ function _url(path) {
   return `${API_BASE}${path}`;
 }
 
-let _token = null;
+const TOKEN_KEY = "metros_token";
 
 export function setAuthToken(token) {
-  _token = token;
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // sessionStorage unavailable (private browsing, blocked site data) --
+    // requests within this page load still work, just won't survive a reload.
+  }
 }
 
 export function getAuthToken() {
-  return _token;
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function _authHeaders() {
-  return _token ? { Authorization: `Bearer ${_token}` } : {};
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function _asJson(res, failMessage) {

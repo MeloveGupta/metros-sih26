@@ -5,6 +5,29 @@ import History from "./History.jsx";
 import Login from "./Login.jsx";
 import ReportView from "./ReportView.jsx";
 
+// Mirrors api.js's token persistence: keeps { name, role } around across a
+// reload (see api.js for why sessionStorage, not localStorage) so a reload
+// restores straight into the signed-in view instead of forcing Login again.
+const SESSION_KEY = "metros_session";
+
+function loadStoredSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeSession(session) {
+  try {
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore -- same fallback as api.js: just won't survive a reload
+  }
+}
+
 function ScanForm({ onReport }) {
   const [shots, setShots] = useState([]); // [{file,url}]
   const [source, setSource] = useState("retail_pack"); // retail_pack | ecommerce_listing
@@ -136,9 +159,14 @@ function ScanForm({ onReport }) {
 }
 
 export default function App() {
-  const [session, setSession] = useState(null); // { name, role }
+  const [session, setSessionState] = useState(loadStoredSession); // { name, role, ... }
   const [report, setReport] = useState(null);
   const [tab, setTab] = useState("scan"); // scan | history | dashboard
+
+  function setSession(next) {
+    storeSession(next);
+    setSessionState(next);
+  }
 
   function signOut() {
     logout();
