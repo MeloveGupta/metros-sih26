@@ -218,12 +218,13 @@ function ScanForm({ onReport }) {
         </select>
       </label>
 
-      {/* Camera input: single + capture=environment => opens the REAR camera.
-          (A `multiple` input makes browsers ignore `capture`, defaulting to the
-          front camera / chooser - so the camera path stays single-shot.) */}
-      <input id="camimg" type="file" accept="image/*" capture="environment"
-        hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-      {/* Gallery input: multiple, no capture => bulk-pick from photos. */}
+      {/* Gallery-only on purpose: the in-page camera capture (input capture=
+          "environment") backgrounds the browser to hand off to the native
+          camera app, and on a low-RAM phone Android will often discard
+          (unload) the backgrounded tab to free memory and silently reload
+          it on return -- losing whatever wasn't picked yet. Taking photos
+          with the phone's own camera app first, then picking them here,
+          avoids that handoff entirely. */}
       <input id="galimg" type="file" accept="image/*" multiple
         hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
 
@@ -235,13 +236,12 @@ function ScanForm({ onReport }) {
               aria-label={`Remove photo ${i + 1}`}>×</button>
           </figure>
         ))}
-        <label htmlFor="camimg" className="slot-empty">
+        <label htmlFor="galimg" className="slot-empty">
           <span className="slot-plus">+</span>
-          <span className="slot-label">{shots.length ? "Take photo" : "Take photos"}</span>
-          <span className="slot-hint">{shots.length ? `${shots.length} added` : "rear camera"}</span>
+          <span className="slot-label">{shots.length ? "Add photo" : "Add photos"}</span>
+          <span className="slot-hint">{shots.length ? `${shots.length} added` : "from gallery"}</span>
         </label>
       </div>
-      <label htmlFor="galimg" className="gallery-link">or choose from gallery</label>
 
       {isListing && (
         <label className="field">
