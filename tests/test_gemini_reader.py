@@ -41,6 +41,21 @@ class _FakeAPIError(Exception):
         super().__init__(f"{code} {status}")
 
 
+# --- _env (empty-but-set env vars must fall back to the default) ----------
+
+def test_env_helper_falls_back_on_empty_string(monkeypatch):
+    """Regression test: a template .env's unfilled "METROS_GEMINI_MODEL="
+    line sets the var to "" (present, not unset) -- plain os.environ.get
+    would silently resolve to "" instead of the default, which once sent an
+    empty model name straight to the live API and got a 404."""
+    monkeypatch.setenv("SOME_TEST_VAR", "")
+    assert gr._env("SOME_TEST_VAR", "fallback") == "fallback"
+    monkeypatch.delenv("SOME_TEST_VAR", raising=False)
+    assert gr._env("SOME_TEST_VAR", "fallback") == "fallback"
+    monkeypatch.setenv("SOME_TEST_VAR", "actual-value")
+    assert gr._env("SOME_TEST_VAR", "fallback") == "actual-value"
+
+
 # --- credentials ---------------------------------------------------------
 
 def test_gemini_available_false_without_api_key(monkeypatch):

@@ -11,8 +11,10 @@ key are missing, `gemini_available()` returns False and callers fall back to
 Tesseract OCR + the offline regex parsers.
 
 Uses the `google-genai` SDK's Interactions API (`client.interactions.create`),
-confirmed against both ai.google.dev's docs and the installed SDK's own type
-stubs (google-genai 2.24.0) -- notably the *older* "Generate Content API"
+confirmed against ai.google.dev's docs and, more importantly, a real
+`client.interactions.create()` call against a live API key (see the model-ID
+note below on why the live API is the tiebreaker, not just an SDK version's
+static type stubs) -- notably the *older* "Generate Content API"
 (`client.models.generate_content`) is a different, legacy surface. There is no
 temperature control in this API at all (no such field in
 `generation_config`); determinism instead comes from the JSON-schema-
@@ -35,13 +37,26 @@ from ..core.errors import ExtractionError
 from ..rules.catalog import RuleCatalog
 from .fields import FieldExtraction
 
-# The installed google-genai SDK's own model literal (google/genai/_gaos/types/
-# interactions/model.py) is the ground truth here, not just the docs site:
-# "gemini-3.5-flash-lite" does NOT exist there -- the flash-lite line currently
-# tops out at "gemini-3.1-flash-lite" (plus the "gemini-flash-lite-latest"
-# alias). "gemini-3.8-flash" IS present. Both env-overridable regardless.
-DEFAULT_MODEL = os.environ.get("METROS_GEMINI_MODEL", "gemini-3.1-flash-lite")
-FALLBACK_MODEL = os.environ.get("METROS_GEMINI_FALLBACK_MODEL", "gemini-3.8-flash")
+def _env(name: str, default: str) -> str:
+    # An empty (but set) env var -- e.g. a template `.env`'s "VAR=" line the
+    # user never filled in -- must fall back to the default too, not resolve
+    # to "". Mirrors backend.core.config's own `_env()` helper.
+    value = os.environ.get(name)
+    return value if value not in (None, "") else default
+
+
+# NOTE on how these were confirmed: the installed google-genai SDK's own
+# static model literal (google/genai/_gaos/types/interactions/model.py) does
+# NOT list "gemini-3.5-flash-lite" -- only up to "gemini-3.1-flash-lite". That
+# turned out to be a stale-SDK-stub false alarm, not a real API limitation:
+# a live `client.models.list()` call against an actual API key shows
+# "gemini-3.5-flash-lite" as a real, current model, and a real
+# `client.interactions.create()` call against it (image input + JSON schema +
+# thinking_level="minimal") succeeded end-to-end. The type stub in a given
+# SDK release can lag the live model catalog; when the two disagree, trust
+# the live API, not the installed package's version-pinned type hints.
+DEFAULT_MODEL = _env("METROS_GEMINI_MODEL", "gemini-3.5-flash-lite")
+FALLBACK_MODEL = _env("METROS_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite")
 
 _MAX_OUTPUT_TOKENS = 2000
 _MAX_SIDE_PX = 1600

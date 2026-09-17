@@ -118,8 +118,8 @@ Get a key at https://aistudio.google.com/apikey, then set in `.env`:
 ```
 METROS_OCR_ENGINE=gemini          # default on this branch
 GEMINI_API_KEY=...
-METROS_GEMINI_MODEL=              # optional override, default gemini-3.1-flash-lite
-METROS_GEMINI_FALLBACK_MODEL=     # optional override, default gemini-3.8-flash
+METROS_GEMINI_MODEL=              # optional override, default gemini-3.5-flash-lite
+METROS_GEMINI_FALLBACK_MODEL=     # optional override, default gemini-3.1-flash-lite
 ```
 Without a key configured, `METROS_OCR_ENGINE=gemini` transparently falls
 back to the Tesseract path — a scan is never silently empty.

@@ -117,8 +117,8 @@ model.
 | `MAX_EXTRAPOLATION_SIDES` | `4.0` | no | how far from the marker a measurement is still trusted |
 | `METROS_OCR_ENGINE` | `gemini` | no | `gemini` (this branch's default; needs `GEMINI_API_KEY`, falls back to `tesseract` when unset/failing) or `tesseract` |
 | `GEMINI_API_KEY` | unset | **yes** | Google AI Studio key (https://aistudio.google.com/apikey); backend only, never logged/exposed |
-| `METROS_GEMINI_MODEL` | `gemini-3.1-flash-lite` | no | primary model; override only if you know the exact current model ID (see `backend/extract/gemini_reader.py`'s module docstring) |
-| `METROS_GEMINI_FALLBACK_MODEL` | `gemini-3.8-flash` | no | tried once if the primary model's free-tier quota is exhausted |
+| `METROS_GEMINI_MODEL` | `gemini-3.5-flash-lite` | no | primary model; override only if you know the exact current model ID (see `backend/extract/gemini_reader.py`'s module docstring) |
+| `METROS_GEMINI_FALLBACK_MODEL` | `gemini-3.1-flash-lite` | no | tried once if the primary model's free-tier quota is exhausted |
 | `ALLOWED_ORIGINS` | unset | no | comma-separated origins allowed to call the API cross-origin (backend only) — the Vercel frontend's URL in a split-origin deployment; empty = no cross-origin access |
 | `VITE_API_URL` | unset | no | frontend only (build-time), the backend's URL for a split-origin deployment; empty = same-origin |
 
