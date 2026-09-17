@@ -12,12 +12,12 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
+from .core import storage
 from .core.config import get_settings
 from .rules.catalog import RuleCatalog, load_catalog
 from .rules.engine import FieldExtraction, FontInputs, GlyphInput, evaluate, summarize
@@ -75,21 +75,20 @@ class EvidenceImageInput:
     """One already-persisted upload: the real file on disk and the hash of its
     actual bytes (not a re-encoding of the decoded pixels)."""
 
-    path: str                    # relative to settings.uploads_dir
+    path: str                    # relative path in the storage backend (core.storage)
     sha256: str
     role: str = "other"
 
 
 def _save_crops(declarations: List[DeclarationFinding], image: np.ndarray,
-                uploads_dir: Path, report_id: str) -> None:
+                report_id: str) -> None:
     """Crop + save evidence for every finding with a bbox, in-place.
 
-    `evidence_crop` is stored relative to `settings.uploads_dir`, matching how
+    `evidence_crop` is stored relative to the storage backend's root (local
+    `uploads_dir` or the Supabase bucket -- see `core.storage`), matching how
     original image paths are stored, so both resolve the same way when served.
     """
-    crops_dir = uploads_dir / report_id / "crops"
     h, w = image.shape[:2]
-    made_any = False
     for d in declarations:
         if d.bbox is None:
             continue
@@ -103,11 +102,9 @@ def _save_crops(declarations: List[DeclarationFinding], image: np.ndarray,
         ok, buf = cv2.imencode(".png", crop)
         if not ok:
             continue
-        if not made_any:
-            crops_dir.mkdir(parents=True, exist_ok=True)
-            made_any = True
-        (crops_dir / f"{d.id}.png").write_bytes(buf.tobytes())
-        d.evidence_crop = f"{report_id}/crops/{d.id}.png"
+        rel = f"{report_id}/crops/{d.id}.png"
+        storage.save_bytes(rel, buf.tobytes())
+        d.evidence_crop = rel
 
 
 def _attach_bboxes(fields: List[FieldExtraction], tokens: Sequence[Token]) -> None:
@@ -746,7 +743,7 @@ def run_scan(
             role="front", captured_at=captured_at, width=w, height=h)]
 
     if save_crops:
-        _save_crops(declarations, marker_image, settings.uploads_dir, report_id)
+        _save_crops(declarations, marker_image, report_id)
 
     report = Report(
         report_id=report_id,

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import mimetypes
 import re
 import tempfile
 import uuid
@@ -36,14 +37,16 @@ import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
+from ..core import storage
 from ..core.config import get_settings, marker_size_mismatch_warning, production_safety_check
 from ..core.errors import MetrosError
 from ..db.repository import (
     append_audit,
     create_user,
+    ensure_admin_user,
     get_report,
     get_user_by_email,
     init_db,
@@ -89,6 +92,20 @@ _Session = session_factory(_engine)
 def get_session():
     with _Session() as session:
         yield session
+
+
+def _bootstrap_admin_from_env() -> None:
+    """Create an admin from ADMIN_EMAIL/ADMIN_PASSWORD on startup, if set and
+    no users exist yet (see db.repository.ensure_admin_user)."""
+    settings = get_settings()
+    if not (settings.admin_email and settings.admin_password):
+        return
+    with _Session() as session:
+        ensure_admin_user(session, email=settings.admin_email,
+                          password_hash=hash_password(settings.admin_password))
+
+
+_bootstrap_admin_from_env()
 
 
 @app.get("/health")
@@ -175,13 +192,11 @@ _DEFAULT_ROLES = ["front", "back"]
 def _save_uploads(report_id: str, filenames: List[str], raw: List[bytes],
                   roles: Optional[List[str]] = None) -> List[EvidenceImageInput]:
     """Persist the uploaded bytes as-is (not re-encoded pixels) and hash them."""
-    out_dir = get_settings().uploads_dir / report_id
-    out_dir.mkdir(parents=True, exist_ok=True)
     saved = []
     for idx, (name, data) in enumerate(zip(filenames, raw)):
         safe = _safe_filename(name or f"image_{idx}.jpg")
         rel = f"{report_id}/{idx}_{safe}"
-        (out_dir / f"{idx}_{safe}").write_bytes(data)
+        storage.save_bytes(rel, data)
         role = roles[idx] if roles else (_DEFAULT_ROLES[idx] if idx < len(_DEFAULT_ROLES) else "other")
         saved.append(EvidenceImageInput(
             path=rel, sha256="sha256:" + hashlib.sha256(data).hexdigest(), role=role))
@@ -342,10 +357,12 @@ def get_scan_image(scan_id: str, n: int, session=Depends(get_session),
     if n < 0 or n >= len(report.evidence.images):
         raise HTTPException(status_code=404, detail="no such evidence image")
     img = report.evidence.images[n]
-    path = get_settings().uploads_dir / img.file
-    if not path.is_file():
+    try:
+        data = storage.read_bytes(img.file)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="evidence image file is missing")
-    return FileResponse(str(path))
+    media_type = mimetypes.guess_type(img.file)[0] or "application/octet-stream"
+    return Response(content=data, media_type=media_type)
 
 
 @app.get("/scans/{scan_id}/crops/{name}")
@@ -361,10 +378,12 @@ def get_scan_crop(scan_id: str, name: str, session=Depends(get_session),
     finding = next(matches, None)
     if finding is None:
         raise HTTPException(status_code=404, detail="no such evidence crop")
-    path = get_settings().uploads_dir / finding.evidence_crop
-    if not path.is_file():
+    try:
+        data = storage.read_bytes(finding.evidence_crop)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="evidence crop file is missing")
-    return FileResponse(str(path))
+    media_type = mimetypes.guess_type(finding.evidence_crop)[0] or "application/octet-stream"
+    return Response(content=data, media_type=media_type)
 
 
 _REVIEW_STATUSES = {"potential_non_compliance", "not_detected", "not_assessable"}
@@ -417,12 +436,24 @@ def download_pdf(scan_id: str, session=Depends(get_session),
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
     _require_finalized_or_nothing_to_review(report)
-    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.pdf"
+    # A report's rendering is deterministic from its (immutable once
+    # downloadable) Report JSON, so cache the bytes in the storage backend
+    # the first time -- avoids re-running WeasyPrint on every download.
+    cache_key = f"{scan_id}/report.pdf"
     try:
-        render_pdf(report, out)
-    except MetrosError as exc:
-        raise HTTPException(status_code=503, detail=f"PDF rendering unavailable: {exc}")
-    return FileResponse(str(out), filename=f"metros-{scan_id}.pdf", media_type="application/pdf")
+        data = storage.read_bytes(cache_key)
+    except FileNotFoundError:
+        out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.pdf"
+        try:
+            render_pdf(report, out)
+        except MetrosError as exc:
+            raise HTTPException(status_code=503, detail=f"PDF rendering unavailable: {exc}")
+        data = out.read_bytes()
+        storage.save_bytes(cache_key, data)
+    return Response(
+        content=data, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="metros-{scan_id}.pdf"'},
+    )
 
 
 @app.get("/scans/{scan_id}/report.docx")
@@ -432,14 +463,21 @@ def download_docx(scan_id: str, session=Depends(get_session),
     if report is None:
         raise HTTPException(status_code=404, detail="scan not found")
     _require_finalized_or_nothing_to_review(report)
-    out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
+    cache_key = f"{scan_id}/report.docx"
     try:
-        render_docx(report, out)
-    except MetrosError as exc:
-        raise HTTPException(status_code=503, detail=f"DOCX rendering unavailable: {exc}")
-    return FileResponse(
-        str(out), filename=f"metros-{scan_id}.docx",
+        data = storage.read_bytes(cache_key)
+    except FileNotFoundError:
+        out = Path(tempfile.gettempdir()) / f"metros-{scan_id}.docx"
+        try:
+            render_docx(report, out)
+        except MetrosError as exc:
+            raise HTTPException(status_code=503, detail=f"DOCX rendering unavailable: {exc}")
+        data = out.read_bytes()
+        storage.save_bytes(cache_key, data)
+    return Response(
+        content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="metros-{scan_id}.docx"'},
     )
 
 

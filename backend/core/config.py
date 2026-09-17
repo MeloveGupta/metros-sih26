@@ -77,11 +77,32 @@ class Settings:
             "DATABASE_URL", f"sqlite:///{REPO_ROOT / 'data' / 'metroscan.db'}"
         )
     )
-    # Original uploaded images + declaration crops (evidence). Local disk for
-    # the prototype; a real deployment would point this at durable storage.
+    # Original uploaded images + declaration crops (evidence), and cached
+    # generated reports. Local disk when Supabase Storage isn't configured
+    # (below) -- fine for local dev/tests, but ephemeral on most container
+    # hosts (Render's free tier included), so a real deployment needs the
+    # Supabase Storage vars set.
     uploads_dir: Path = field(
         default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
     )
+
+    # --- Evidence + report storage: Supabase Storage (production) ---
+    # All three must be set to use Supabase Storage; otherwise storage.py
+    # falls back to uploads_dir above. The bucket should be private (no
+    # public read) -- files are only ever served back out through the
+    # authenticated API, never a public Supabase Storage URL.
+    supabase_url: str = field(default_factory=lambda: _env("SUPABASE_URL", ""))
+    supabase_service_role_key: str = field(
+        default_factory=lambda: _env("SUPABASE_SERVICE_ROLE_KEY", "")
+    )
+    supabase_bucket: str = field(default_factory=lambda: _env("SUPABASE_BUCKET", ""))
+
+    # --- First-boot admin ---
+    # If set and no users exist yet, the API creates this admin at startup --
+    # there's no sign-up flow, so a fresh production database otherwise has
+    # no way to log in without a manual DB write. Ignored once any user exists.
+    admin_email: str = field(default_factory=lambda: _env("ADMIN_EMAIL", ""))
+    admin_password: str = field(default_factory=lambda: _env("ADMIN_PASSWORD", ""))
 
     # Label reader: "gemini" (default, this experimental branch) uses Google
     # Gemini's free tier to read declarations straight off the photos -- see
@@ -104,10 +125,17 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# Publicly-known placeholder values -- config.py's own default plus the
+# literal .env.example template value a lazy/rushed deployment might leave
+# untouched. Anyone can read this list, so any of these in production is as
+# good as no secret at all.
+_WEAK_JWT_SECRETS = {"dev-insecure-secret", "change-me", "changeme", "secret", ""}
+
+
 def production_safety_check(settings: Settings | None = None) -> None:
-    """Refuse to start in production with an auth bypass or the default,
-    publicly-known JWT secret -- both are fine for local development, never
-    for a real deployment."""
+    """Refuse to start in production with an auth bypass or a known-weak
+    JWT secret -- both are fine for local development, never for a real
+    deployment."""
     settings = settings or get_settings()
     if settings.env != "production":
         return
@@ -115,10 +143,10 @@ def production_safety_check(settings: Settings | None = None) -> None:
         raise RuntimeError(
             "METROS_AUTH_DISABLED=1 is not allowed when METROS_ENV=production."
         )
-    if settings.jwt_secret == "dev-insecure-secret":
+    if settings.jwt_secret.strip().lower() in _WEAK_JWT_SECRETS:
         raise RuntimeError(
             "JWT_SECRET must be set to a real secret when METROS_ENV=production "
-            "(the default is publicly known)."
+            "(it is still a known placeholder value)."
         )
 
 

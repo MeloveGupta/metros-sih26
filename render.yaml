@@ -1,0 +1,39 @@
+# Render Blueprint for the Metros API. Import this repo on Render
+# (https://dashboard.render.com/select-repo?type=blueprint) or point an
+# existing Blueprint at it -- see docs/deployment.md for the full walkthrough
+# including the Supabase (Postgres + Storage) side.
+#
+# Every `sync: false` var must be filled in by hand in the Render dashboard
+# after the first deploy (secrets, and values this repo can't know) --
+# Render leaves them blank rather than guessing.
+services:
+  - type: web
+    name: metros-api
+    env: docker
+    dockerfilePath: ./docker/api.Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: METROS_ENV
+        value: production
+      - key: METROS_OCR_ENGINE
+        value: gemini
+      - key: JWT_SECRET
+        sync: false          # openssl rand -hex 32
+      - key: DATABASE_URL
+        sync: false          # Supabase Postgres pooler URL, postgresql+psycopg://...
+      - key: SUPABASE_URL
+        sync: false          # https://<project-ref>.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false          # Supabase project settings -> API -- service_role, not anon
+      - key: SUPABASE_BUCKET
+        value: metros-evidence
+      - key: ADMIN_EMAIL
+        sync: false          # first-boot admin login -- see backend/db/repository.ensure_admin_user
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false          # https://aistudio.google.com/apikey
+      - key: ALLOWED_ORIGINS
+        sync: false          # the Vercel frontend's origin, e.g. https://metros.vercel.app

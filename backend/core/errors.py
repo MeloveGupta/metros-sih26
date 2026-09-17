@@ -34,3 +34,8 @@ class RuleCatalogError(MetrosError):
 
 class ExtractionError(MetrosError):
     """A declaration field could not be parsed from OCR text."""
+
+
+class StorageError(MetrosError):
+    """An evidence file or generated report could not be read or written,
+    in either the local-disk or Supabase Storage backend."""

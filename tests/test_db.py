@@ -7,8 +7,11 @@ import pytest
 
 from backend.db.repository import (
     append_audit,
+    create_user,
+    ensure_admin_user,
     get_report,
     init_db,
+    list_users,
     make_engine,
     save_report,
     search_scans,
@@ -64,6 +67,23 @@ def test_search_by_disposition_and_name(session):
 
     by_name, by_name_total = search_scans(session, product_name="chip")
     assert by_name_total == 1 and by_name[0].id == "r1"
+
+
+def test_ensure_admin_user_creates_when_no_users_exist(session):
+    created = ensure_admin_user(session, email="admin@metroscan.gov",
+                                password_hash="hashed")
+    assert created is not None
+    assert created.role == "admin"
+    assert [u.email for u in list_users(session)] == ["admin@metroscan.gov"]
+
+
+def test_ensure_admin_user_is_a_noop_once_any_user_exists(session):
+    create_user(session, email="officer@metroscan.gov", name="Officer",
+               role="officer", pw_hash="hashed")
+    created = ensure_admin_user(session, email="admin@metroscan.gov",
+                                password_hash="hashed")
+    assert created is None
+    assert [u.email for u in list_users(session)] == ["officer@metroscan.gov"]
 
 
 def test_search_paging_reports_total_separately_from_page_size(session):

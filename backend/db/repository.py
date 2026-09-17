@@ -17,14 +17,28 @@ from .models import AuditLog, Base, ProductRow, ScanRow, User
 
 def make_engine(database_url: Optional[str] = None) -> Engine:
     url = database_url or get_settings().database_url
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    if url.startswith("sqlite"):
-        connect_args["timeout"] = 15  # wait out transient locks instead of erroring
-    # Ensure the parent directory exists for a file-based SQLite DB.
-    if url.startswith("sqlite:///") and ":memory:" not in url:
-        db_path = Path(url.replace("sqlite:///", "", 1))
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(url, connect_args=connect_args, future=True)
+    is_sqlite = url.startswith("sqlite")
+    engine_kwargs: dict = {"future": True}
+
+    if is_sqlite:
+        connect_args = {"check_same_thread": False, "timeout": 15}
+        # Ensure the parent directory exists for a file-based SQLite DB.
+        if url.startswith("sqlite:///") and ":memory:" not in url:
+            db_path = Path(url.replace("sqlite:///", "", 1))
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        # Postgres, including Supabase's pgbouncer connection pooler:
+        # disable psycopg3's server-side prepared statements. In pgbouncer's
+        # transaction-pooling mode, a later EXECUTE can land on a different
+        # physical connection than the one that PREPAREd the statement --
+        # "prepared statement ... does not exist" otherwise. Harmless for a
+        # direct (non-pooled) connection too. pool_pre_ping guards against
+        # the pooler silently dropping idle connections between requests.
+        connect_args = {"prepare_threshold": None}
+        engine_kwargs["pool_pre_ping"] = True
+
+    engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+
     # WAL improves concurrent read/write durability for the file-based DB.
     if url.startswith("sqlite:///") and ":memory:" not in url:
         from sqlalchemy import event
@@ -222,3 +236,15 @@ def get_user_by_email(session: Session, email: str) -> Optional[User]:
 
 def list_users(session: Session) -> List[User]:
     return list(session.scalars(select(User).order_by(User.email)))
+
+
+def ensure_admin_user(session: Session, *, email: str, password_hash: str,
+                      name: str = "Admin") -> Optional[User]:
+    """First-boot convenience: create an admin with this email/password hash
+    if no users exist yet at all. There's no sign-up flow, so a fresh
+    database otherwise has no way to log in without a manual DB write.
+    No-op (returns None) once any user exists, so it's safe to call on
+    every startup with the env vars left set."""
+    if list_users(session):
+        return None
+    return create_user(session, email=email, name=name, role="admin", pw_hash=password_hash)
