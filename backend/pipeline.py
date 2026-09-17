@@ -527,6 +527,7 @@ def run_scan(
     catalog: Optional[RuleCatalog] = None,
     ocr_backend_used: str = "tesseract",
     ocr_warning: Optional[str] = None,
+    extract_backend: str = "regex",
     label_text_provided: bool = False,
     common_name: Optional[str] = None,
     category: Optional[str] = None,
@@ -590,12 +591,31 @@ def run_scan(
                 cal = c  # remember an uncalibrated result as the fallback
     marker_image = images[cal_idx]
 
-    # 2. Extraction over the combined OCR/label text (regex, deterministic).
+    # 2. Extraction over the combined OCR/label text (regex by default; Gemini
+    #    vision when requested). Known-bug fix: pasted label text is always
+    #    authoritative and complete, so images are only ever handed to the
+    #    vision path when there is NO label text -- a blank placeholder image
+    #    (the API layer's text-only e-commerce-listing stand-in) never reaches
+    #    the model, regardless of what's in `images`.
     combined_text = "\n".join(o.text for o in ocrs if o and o.text)
-    outcome = extract_declarations(combined_text, catalog, common_name_hint=common_name)
+    image_hashes = (
+        [_sha256_of_image(img) for img in images]
+        if extract_backend == "gemini" and not label_text_provided else None
+    )
+    outcome = extract_declarations(
+        combined_text, catalog, backend=extract_backend,
+        images=(images if not label_text_provided else None),
+        image_hashes=image_hashes,
+        common_name_hint=common_name,
+    )
     fields = outcome.fields
-    unreadable = not (outcome.text_read or "").strip()
-    extraction_backend_used = "label_text" if label_text_provided else ocr_backend_used
+    unreadable = not outcome.used_gemini and not (outcome.text_read or "").strip()
+    if label_text_provided:
+        extraction_backend_used = "label_text"
+    elif outcome.used_gemini:
+        extraction_backend_used = "gemini"
+    else:
+        extraction_backend_used = ocr_backend_used
 
     # Font measurement (Rule 7) needs glyph boxes from the MARKER image's OCR.
     # In the vision path OCR was skipped for speed, so if a card was found but we
@@ -664,6 +684,14 @@ def run_scan(
 
     if ocr_warning:
         extraction_warnings.append(ocr_warning)
+    if outcome.gemini_error:
+        # Carries "Gemini free-tier quota reached..." verbatim when that's the
+        # actual cause (see gemini_reader._call_with_model_fallback); any other
+        # Gemini failure still surfaces here so a fallback to OCR is never silent.
+        extraction_warnings.append(
+            f"Gemini extraction unavailable, fell back to Tesseract OCR + regex: "
+            f"{outcome.gemini_error}"
+        )
     if skip_physical_measurement:
         extraction_warnings.append(
             "letter height (Rule 7) and placement (Rule 8) are not assessed for an "
@@ -687,6 +715,10 @@ def run_scan(
     extraction = Extraction(
         backend_used=extraction_backend_used,
         warnings=extraction_warnings,
+        gemini_model_used=outcome.gemini_model_used,
+        gemini_input_tokens=outcome.gemini_input_tokens,
+        gemini_output_tokens=outcome.gemini_output_tokens,
+        gemini_thought_tokens=outcome.gemini_thought_tokens,
     )
 
     # 5. Assemble report. Evidence images are the real uploaded files when the

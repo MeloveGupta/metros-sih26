@@ -83,12 +83,14 @@ class Settings:
         default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
     )
 
-    # Label reader: "tesseract" (needs requirements-ocr.txt) for now -- a
-    # vision-based Gemini reader is being added back on this experimental
-    # branch (see backend/extract/gemini_reader.py, in progress). See
-    # backend/vision/ocr.py's select_ocr_engine() and backend/api/main.py's
-    # /scan handler.
-    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "tesseract"))
+    # Label reader: "gemini" (default, this experimental branch) uses Google
+    # Gemini's free tier to read declarations straight off the photos -- see
+    # backend/extract/gemini_reader.py; it needs GEMINI_API_KEY, and silently
+    # falls back to "tesseract" (needs requirements-ocr.txt) whenever the key
+    # is missing or a call fails, so a scan is never silently empty either
+    # way. See backend/vision/ocr.py's select_ocr_engine() and
+    # backend/api/main.py's /scan handler for exactly how the fallback works.
+    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "gemini"))
 
     # Comma-separated origins allowed to call this API cross-origin (e.g. a
     # Vercel frontend calling a Render/Railway backend). Empty by default --

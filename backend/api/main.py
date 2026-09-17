@@ -58,7 +58,8 @@ from ..db.repository import (
 from ..pipeline import EvidenceImageInput, run_scan
 from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
-from ..vision.ocr import engine_available, select_ocr_engine
+from ..extract import gemini_reader
+from ..vision.ocr import engine_available, ocr_from_text, select_ocr_engine
 from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
@@ -98,6 +99,9 @@ def health():
         "version": app.version,
         "ocr_engine": settings.ocr_engine,
         "ocr_engine_available": engine_available(settings.ocr_engine),
+        "gemini_api_key_configured": gemini_reader.gemini_available(),
+        "gemini_model": gemini_reader.DEFAULT_MODEL,
+        "gemini_fallback_model": gemini_reader.FALLBACK_MODEL,
     }
 
 
@@ -239,7 +243,22 @@ async def scan(
     report_id = str(uuid.uuid4())
     evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
-    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
+    settings = get_settings()
+    # Gated on gemini_available() too: without GEMINI_API_KEY configured,
+    # stay on the Tesseract path rather than skip OCR and produce an empty
+    # report (Gemini's own OCR-fallback inside dispatch.py only helps once
+    # text has already been read from *some* source).
+    use_gemini = (settings.ocr_engine == "gemini" and not label_text
+                 and gemini_reader.gemini_available())
+    if use_gemini:
+        # The vision path reads the images directly -- skip Tesseract entirely
+        # for speed (Rule 7/8's own marker-token fallback in run_scan() covers
+        # word/line boxes lazily if a calibration card is actually found).
+        ocrs = [ocr_from_text("") for _ in decoded]
+        ocr_backend_used, ocr_warning, extract_backend = "tesseract", None, "gemini"
+    else:
+        ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
+        extract_backend = "regex"
 
     product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,
@@ -251,6 +270,7 @@ async def scan(
                           image_file=filenames[0],
                           ocr_backend_used=ocr_backend_used,
                           ocr_warning=ocr_warning,
+                          extract_backend=extract_backend,
                           label_text_provided=bool(label_text),
                           category=category,
                           report_id=report_id, evidence_images=evidence_images,

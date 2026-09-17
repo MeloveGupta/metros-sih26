@@ -201,7 +201,15 @@ export default function ReportView({ report, onUpdate }) {
       {report.extraction && (
         <p className="readerline">
           Reader: <b>{report.extraction.backend_used === "label_text" ? "pasted label text"
+            : report.extraction.backend_used === "gemini" ? "Gemini (vision)"
             : "Tesseract OCR"}</b>
+          {report.extraction.gemini_model_used && (
+            <span className="muted">
+              {" "}· {report.extraction.gemini_model_used}
+              {" "}(in={report.extraction.gemini_input_tokens}, out={report.extraction.gemini_output_tokens},
+              thought={report.extraction.gemini_thought_tokens})
+            </span>
+          )}
           {report.extraction.warnings.map((w) => <span className="muted" key={w}> · {w}</span>)}
         </p>
       )}

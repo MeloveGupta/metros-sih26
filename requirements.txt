@@ -19,6 +19,9 @@ Pillow>=11.0
 # --- Field extraction (offline) ---
 regex>=2024.11
 
+# --- Field extraction (Gemini vision fast-path, free tier) ---
+google-genai>=1.0
+
 # --- Rules ---
 PyYAML>=6.0
 
