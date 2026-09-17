@@ -26,6 +26,9 @@ export default function Login({ onSignedIn }) {
       <div className="panel-head">
         <h2>Sign in</h2>
         <p className="lede">Officer, auditor, or admin credentials.</p>
+        <p className="lede" style={{ marginTop: 6 }}>
+          Demo login: <b>officer@metros.gov</b> / <b>officer@metros</b>
+        </p>
       </div>
       <label className="field">
         <span>Email</span>
