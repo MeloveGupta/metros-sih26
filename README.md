@@ -92,79 +92,13 @@ docker compose up --build     # api + frontend + postgres
 See [`docs/deployment.md`](docs/deployment.md) for env vars, data storage, and
 the rule-catalog hot-update process.
 
-## Experimental branch: hosted PaddleOCR API
+## Experimental branch: Gemini free tier
 
-`experiment/paddleocr-vl` (this branch) replaced local PaddleOCR-VL
-inference — GPU-only, and `predict()` never returned a result within 5
-minutes in testing (see earlier commits) — with PaddleOCR's **official
-hosted API**. No GPU, no model download; deployable on ordinary
-Render/Railway-style hosting. **Never merged into `main`.**
-
-### Setup
-
-```bash
-make install             # includes the paddleocr hosted-API client
-```
-
-Get an access token at `https://aistudio.baidu.com/account/accessToken`
-(free account), then in `.env`:
-
-```bash
-METROS_OCR_ENGINE=paddleocr_api   # default -- falls back to Tesseract automatically
-PADDLEOCR_ACCESS_TOKEN=your-token-here
-```
-
-`GET /health` reports the configured engine, whether it's actually usable
-right now (`ocr_engine`, `ocr_engine_available`), whether a token is set
-(`paddleocr_api_token_configured`), and the last API error message if any
-(`paddleocr_api_last_error`, no secrets). Every report also carries
-`extraction.backend_used` and, on a fallback, a warning saying why.
-
-Run the one real-API integration test (skipped by default, needs a token):
-
-```bash
-PADDLEOCR_ACCESS_TOKEN=... pytest -m paddle_api
-```
-
-Compare engines on your own photos:
-
-```bash
-python scripts/compare_readers.py --photos-dir path/to/photos \
-    --ground-truth path/to/ground_truth.json --out-csv out/compare.csv
-```
-
-### What's implemented vs. deferred
-
-- **Label text** (`parse_document()`, model `PaddleOCR-VL-1.6`) — fully
-  implemented (`backend/vision/paddle_api.py`): JPEG re-encode (max side
-  2000px, EXIF never carried over — `cv2.imencode` works on decoded pixels,
-  not the source file), 30s request / 90s poll timeout, one retry on
-  network errors, disk cache by image SHA-256 so re-scans don't burn the
-  documented 3,000-pages/model/day quota, and a fallback to Tesseract +
-  visible warning on any failure (missing token, auth error, quota
-  exhaustion, timeout, malformed result — never a silent empty report).
-- **Word/line boxes for Rule 7/8** (`ocr()`, model `PP-OCRv6`) — **not
-  implemented.** The client library passes its `prunedResult` through
-  verbatim, untyped, from the server; the docs don't show its exact keys,
-  and confirming them needs a live call with a real access token, which
-  this session didn't have. Rule 7/8 keep using Tesseract on the calibrated
-  image via the existing marker-token fallback in `backend/pipeline.py` —
-  the same safe default the local PaddleOCR-VL branch used, and zero
-  pipeline changes either way. If you have a token and want this filled
-  in: run `client.ocr(file_path=..., model="PP-OCRv6")` once, inspect
-  `result.pages[0].pruned_result`, and add a `read_boxes()` function to
-  `paddle_api.py` converting whatever comes back into this codebase's
-  `Token(text, bbox=(x, y, w, h), confidence)` shape.
-
-### Known limitations
-
-- Quota: 3,000 pages per model per day per token (documented) — the disk
-  cache mitigates re-scans, but a busy demo could still hit it.
-- No documented image size/byte limit — this branch's own conservative
-  default (JPEG, max side 2000px) is not a documented ceiling.
-- `ocr()`'s box format is unconfirmed (see above) — Rule 7/8 unaffected
-  (Tesseract), but `scripts/compare_readers.py`'s `paddleocr_api` engine
-  only measures declaration text detection, not font-height accuracy.
+`experiment/paddleocr-vl` (this branch) is switching from PaddleOCR's hosted
+API to Google Gemini's free tier (Google AI Studio) as the vision-based
+label reader — no GPU, no Anthropic/Baidu/Hugging Face dependency. Work in
+progress; this section is rewritten once the Gemini reader lands.
+**Never merged into `main`.**
 
 ## The moat — Rule 7 in millimetres
 

@@ -59,7 +59,6 @@ from ..pipeline import EvidenceImageInput, run_scan
 from ..reports.render import render_docx, render_pdf
 from ..schemas.report import Inspection, Officer, OfficerAction, Product
 from ..vision.ocr import engine_available, select_ocr_engine
-from ..vision.paddle_api import last_api_error, paddleocr_api_configured
 from .auth import CurrentUser, require_role
 from .security import ROLES, create_access_token, hash_password, verify_password
 
@@ -99,8 +98,6 @@ def health():
         "version": app.version,
         "ocr_engine": settings.ocr_engine,
         "ocr_engine_available": engine_available(settings.ocr_engine),
-        "paddleocr_api_token_configured": paddleocr_api_configured(),
-        "paddleocr_api_last_error": last_api_error(),
     }
 
 
@@ -242,9 +239,7 @@ async def scan(
     report_id = str(uuid.uuid4())
     evidence_images = _save_uploads(report_id, filenames, raw_bytes, roles=roles)
 
-    image_hashes = [hashlib.sha256(b).hexdigest() for b in raw_bytes]
-    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(
-        decoded, label_text, image_hashes=image_hashes)
+    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(decoded, label_text)
 
     product = Product(name=product_name, category=category, source=source)
     inspection = Inspection(officer=Officer(id=current_user.sub,

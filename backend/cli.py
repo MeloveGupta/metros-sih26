@@ -5,16 +5,13 @@ Useful for the field/demo workflow and for generating report artifacts:
     python -m backend.cli scan photo.jpg --label-file label.txt --out-dir out/
     python -m backend.cli scan photo.jpg --marker-mm 40 --panel-cm2 250
 
-`--label-*` may be omitted and text is read from the image instead, via
-`METROS_OCR_ENGINE` (default "paddleocr_api", PaddleOCR's hosted API --
-needs PADDLEOCR_ACCESS_TOKEN; falls back to Tesseract automatically; set to
-"tesseract" to use it directly). Millimetre verdicts require a calibration
-marker in the photo.
+`--label-*` may be omitted and text is read from the image instead via
+Tesseract (`METROS_OCR_ENGINE=tesseract`, the default). Millimetre verdicts
+require a calibration marker in the photo.
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -80,9 +77,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     elif args.label_text:
         label_text = args.label_text
 
-    image_hash = hashlib.sha256(Path(args.image).read_bytes()).hexdigest()
-    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine(
-        [image], label_text, image_hashes=[image_hash])
+    ocrs, ocr_backend_used, ocr_warning = select_ocr_engine([image], label_text)
     ocr = ocrs[0]
     if ocr_warning:
         print(f"warning: {ocr_warning}", file=sys.stderr)

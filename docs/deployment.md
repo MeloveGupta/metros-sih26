@@ -1,20 +1,18 @@
 # Deployment
 
 Metros is a web app: the backend needs a database and local disk (or a
-persistent volume) for evidence storage. The default label reader is
-PaddleOCR's hosted API (no GPU, no model download) with on-device Tesseract
-as the automatic fallback. This doc covers running it locally, via Docker
-Compose, and deploying to Vercel (frontend) + Render or Railway (backend).
+persistent volume) for evidence storage. The label reader is on-device
+Tesseract for now (a vision-based Gemini reader, no GPU needed, is being
+added back on this experimental branch). This doc covers running it
+locally, via Docker Compose, and deploying to Vercel (frontend) + Render or
+Railway (backend).
 
 ## System requirements
 
 - Python 3.11–3.14 (backend), Node 20+ (frontend build)
 - PostgreSQL 14+ in production (SQLite is fine for local dev — it's the
   default with no `DATABASE_URL` set)
-- A `PADDLEOCR_ACCESS_TOKEN` for the default hosted label reader (get one at
-  `aistudio.baidu.com/account/accessToken`) — optional; without one, every
-  scan automatically uses the Tesseract fallback instead
-- Tesseract OCR binary on `PATH` for the fallback reader (`apt-get install
+- Tesseract OCR binary on `PATH` for the label reader (`apt-get install
   tesseract-ocr` / `brew install tesseract`) — optional locally, always
   installed in the Docker image
 - WeasyPrint's native libs (cairo, pango, gdk-pixbuf) for PDF rendering —
@@ -25,8 +23,8 @@ Compose, and deploying to Vercel (frontend) + Render or Railway (backend).
 ## Local setup
 
 ```bash
-make install            # venv + backend deps (includes the paddleocr hosted-API client)
-make install-ocr        # optional: Tesseract OCR fallback (pytesseract)
+make install            # venv + backend deps
+make install-ocr        # optional: Tesseract OCR (pytesseract)
 make card                # -> out/calibration_card.png (print at 100%)
 make seed                # seed officer@metroscan.gov / officer, admin@metroscan.gov / admin
 make run                 # API on :8000
@@ -66,8 +64,7 @@ with session_factory(engine)() as s:
 
 ## Deploying: Vercel (frontend) + Render or Railway (backend)
 
-No GPU needed anywhere in this path — that's the point of the hosted
-PaddleOCR API.
+No GPU needed anywhere in this path.
 
 **1. Backend (Render or Railway), from `docker/api.Dockerfile`:**
 - Create a new **Web Service** from this repo, Dockerfile path
@@ -100,8 +97,9 @@ you have more than one (a preview + production domain, say), and redeploy
 the backend. Without this, the browser blocks the frontend's requests
 (CORS) — `ALLOWED_ORIGINS` is empty/fail-closed by default.
 
-**Data note:** label photos are sent to PaddleOCR's hosted API (Baidu AI
-Studio); production would self-host the same open-source model.
+**Data note:** with `METROS_OCR_ENGINE=tesseract`, label reading is entirely
+on-device — no photos leave the deployment for this. (This section is
+updated again once the Gemini vision reader lands on this branch.)
 
 ## Environment variables
 
@@ -117,8 +115,7 @@ Studio); production would self-host the same open-source model.
 | `MARKER_SIZE_MM` | `40.0` | no | must match `scripts/gen_calibration_card.py --marker-mm`, or every mm figure is wrong |
 | `MAX_CORNER_JITTER_PX` | `2.0` | no | calibration-quality gate |
 | `MAX_EXTRAPOLATION_SIDES` | `4.0` | no | how far from the marker a measurement is still trusted |
-| `METROS_OCR_ENGINE` | `paddleocr_api` | no | `paddleocr_api` (hosted, default) or `tesseract` |
-| `PADDLEOCR_ACCESS_TOKEN` | unset | **yes** | hosted label reader; get one at `aistudio.baidu.com/account/accessToken`; unset → every scan uses the Tesseract fallback automatically |
+| `METROS_OCR_ENGINE` | `tesseract` | no | `tesseract` (only engine right now) |
 | `ALLOWED_ORIGINS` | unset | no | comma-separated origins allowed to call the API cross-origin (backend only) — the Vercel frontend's URL in a split-origin deployment; empty = no cross-origin access |
 | `VITE_API_URL` | unset | no | frontend only (build-time), the backend's URL for a split-origin deployment; empty = same-origin |
 
@@ -147,15 +144,9 @@ on any new/changed entry; never hardcode legal text in Python.
   photo-capture inputs rely on (and any future live-camera work) are
   restricted to secure contexts, and it protects the JWT in transit either way
   (Vercel and Render/Railway both do this by default).
-- The API needs a stable outbound path to PaddleOCR's hosted API for the
-  default label reader; without it (or without `PADDLEOCR_ACCESS_TOKEN`),
-  the app still works via the Tesseract fallback, just without the primary
-  reader. PaddleOCR's hosted API enforces a documented quota of 3,000
-  pages/model/day per token — scans of the same photo are cached on disk by
-  image SHA-256 (`<UPLOADS_DIR>/../ocr_cache/`) so retries/re-opens don't
-  count twice against it.
-- `data/uploads` (and `ocr_cache/` alongside it) grow with every scan
-  (originals + crops are never deleted) — plan storage and backups
-  accordingly for real inspection volume, and make sure it's on the
-  persistent disk/volume in production, not the container's ephemeral
-  filesystem.
+- Label reading (Tesseract) is entirely on-device right now — no outbound
+  network dependency for it.
+- `data/uploads` grows with every scan (originals + crops are never
+  deleted) — plan storage and backups accordingly for real inspection
+  volume, and make sure it's on the persistent disk/volume in production,
+  not the container's ephemeral filesystem.

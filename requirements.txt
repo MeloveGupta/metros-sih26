@@ -1,10 +1,6 @@
-# Core backend deps. `paddleocr` is the client for PaddleOCR's hosted API
-# (the default label reader on this experimental branch) -- confirmed to
-# import and work with no `paddlepaddle`/`paddlepaddle-gpu` needed, so it's
-# a normal, lightweight dependency here, not an optional extra. Tesseract
-# (the local fallback) is intentionally NOT here -- install it separately
-# with `pip install -r requirements-ocr.txt`. Without either, use the
-# label-text path.
+# Core backend deps. Tesseract (the local OCR fallback) is intentionally NOT
+# here -- install it separately with `pip install -r requirements-ocr.txt`.
+# Without it, use the label-text path.
 #
 # Pins are lower-bounds so the resolver can pick wheels that exist for your
 # Python version (3.11–3.14+).
@@ -19,9 +15,6 @@ python-multipart>=0.0.20
 opencv-contrib-python>=4.10      # cv2.aruco lives in contrib
 numpy>=1.26
 Pillow>=11.0
-
-# --- Label reading (hosted, default) ---
-paddleocr>=3.6.0        # PaddleOCR's hosted-API client only, no paddlepaddle
 
 # --- Field extraction (offline) ---
 regex>=2024.11

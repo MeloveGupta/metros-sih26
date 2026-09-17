@@ -140,7 +140,7 @@ def render_docx(report: Report, out_path: Path) -> Path:
     )
 
     if report.extraction:
-        reader = {"paddleocr_api": "PaddleOCR API", "tesseract": "Tesseract OCR",
+        reader = {"tesseract": "Tesseract OCR",
                  "label_text": "pasted label text"}.get(
                      report.extraction.backend_used, "Tesseract OCR")
         doc.add_paragraph(f"Reader: {reader}")

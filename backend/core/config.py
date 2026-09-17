@@ -83,13 +83,12 @@ class Settings:
         default_factory=lambda: REPO_ROOT / _env("UPLOADS_DIR", "data/uploads")
     )
 
-    # OCR engine used to read label text from photos: "paddleocr_api"
-    # (default on this experimental branch -- PaddleOCR's hosted API, needs
-    # PADDLEOCR_ACCESS_TOKEN, no GPU/model download) or "tesseract" (needs
-    # requirements-ocr.txt). See backend/vision/ocr.py's select_ocr_engine(),
-    # which falls back to Tesseract automatically if the hosted API is
-    # unconfigured or fails.
-    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "paddleocr_api"))
+    # Label reader: "tesseract" (needs requirements-ocr.txt) for now -- a
+    # vision-based Gemini reader is being added back on this experimental
+    # branch (see backend/extract/gemini_reader.py, in progress). See
+    # backend/vision/ocr.py's select_ocr_engine() and backend/api/main.py's
+    # /scan handler.
+    ocr_engine: str = field(default_factory=lambda: _env("METROS_OCR_ENGINE", "tesseract"))
 
     # Comma-separated origins allowed to call this API cross-origin (e.g. a
     # Vercel frontend calling a Render/Railway backend). Empty by default --

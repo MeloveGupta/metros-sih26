@@ -48,7 +48,7 @@ from backend.extract.dispatch import extract_declarations  # noqa: E402
 from backend.rules.catalog import load_catalog  # noqa: E402
 from backend.vision.ocr import select_ocr_engine  # noqa: E402
 
-_ENGINES = ("tesseract", "paddleocr_api")
+_ENGINES = ("tesseract",)
 
 
 def _normalize(s: str) -> str:
