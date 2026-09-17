@@ -10,12 +10,14 @@ silently.
 from __future__ import annotations
 
 import base64
+import io
 import mimetypes
 from pathlib import Path
 from typing import List, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ..core import storage
 from ..core.config import get_settings
 from ..core.errors import MetrosError
 from ..schemas.report import Report
@@ -30,13 +32,15 @@ _STATUS_LABEL = {
 
 
 def _data_uri(rel_path: str) -> Optional[str]:
-    """Base64-inline a stored evidence file so PDF/DOCX rendering doesn't need
-    file-system access configuration (WeasyPrint) or a second pass (DOCX)."""
-    path = get_settings().uploads_dir / rel_path
-    if not path.is_file():
+    """Base64-inline a stored evidence file (local disk or Supabase Storage,
+    via core.storage) so PDF/DOCX rendering doesn't need file-system access
+    configuration (WeasyPrint) or a second pass (DOCX)."""
+    try:
+        raw = storage.read_bytes(rel_path)
+    except FileNotFoundError:
         return None
-    mime = mimetypes.guess_type(path.name)[0] or "image/png"
-    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    mime = mimetypes.guess_type(rel_path)[0] or "image/png"
+    data = base64.b64encode(raw).decode("ascii")
     return f"data:{mime};base64,{data}"
 
 
@@ -248,18 +252,22 @@ def render_docx(report: Report, out_path: Path) -> Path:
     )
     doc.add_paragraph(f"SHA-256: {report.evidence.original.sha256}")
     for img in report.evidence.images:
-        path = get_settings().uploads_dir / img.file
-        if path.is_file():
-            doc.add_paragraph(f"Photo ({img.role}):")
-            doc.add_picture(str(path), width=Inches(3.0))
+        try:
+            raw = storage.read_bytes(img.file)
+        except FileNotFoundError:
+            continue
+        doc.add_paragraph(f"Photo ({img.role}):")
+        doc.add_picture(io.BytesIO(raw), width=Inches(3.0))
     for group in (report.declarations, report.placement, report.readability):
         for d in group:
             if not d.evidence_crop:
                 continue
-            path = get_settings().uploads_dir / d.evidence_crop
-            if path.is_file():
-                doc.add_paragraph(f"Evidence crop -- {d.label}:")
-                doc.add_picture(str(path), width=Inches(2.0))
+            try:
+                raw = storage.read_bytes(d.evidence_crop)
+            except FileNotFoundError:
+                continue
+            doc.add_paragraph(f"Evidence crop -- {d.label}:")
+            doc.add_picture(io.BytesIO(raw), width=Inches(2.0))
     if report.legal_basis.get("statute"):
         doc.add_paragraph(f"Statute: {report.legal_basis['statute']}")
     doc.add_paragraph(f"Rule catalog: {report.rule_catalog.version}")

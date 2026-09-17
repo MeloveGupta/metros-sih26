@@ -77,6 +77,31 @@ def _supabase_upload(rel_path: str, data: bytes) -> None:
         )
 
 
+_NOT_FOUND_CODES = {"NoSuchKey", "NoSuchBucket", "not_found", "object_not_found"}
+
+
+def _is_not_found_response(resp) -> bool:
+    """Supabase Storage's object-download endpoint doesn't reliably use HTTP
+    404 for "doesn't exist" -- it can return 400 with the real status/code
+    inside the JSON body instead (e.g. {"statusCode":"404","code":"NoSuchKey"}
+    or {"error":"Bucket not found","code":"NoSuchBucket"}). Check both the
+    transport status and the body so a routine cache-miss (a report not yet
+    rendered) is recognized as "not found" instead of a hard failure."""
+    if resp.status_code == 404:
+        return True
+    if resp.status_code != 400:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    return (
+        str(body.get("statusCode", "")) == "404"
+        or body.get("code") in _NOT_FOUND_CODES
+        or body.get("error") in _NOT_FOUND_CODES
+    )
+
+
 def _supabase_download(rel_path: str) -> bytes:
     import httpx
 
@@ -91,7 +116,7 @@ def _supabase_download(rel_path: str) -> bytes:
         resp = httpx.get(url, headers=headers, timeout=30.0)
     except httpx.HTTPError as exc:
         raise StorageError(f"could not reach Supabase Storage: {exc}") from exc
-    if resp.status_code == 404:
+    if _is_not_found_response(resp):
         raise FileNotFoundError(rel_path)
     if resp.status_code >= 300:
         raise StorageError(
