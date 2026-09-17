@@ -39,6 +39,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from sqlalchemy import text as sql_text
 from starlette.concurrency import run_in_threadpool
 
 from ..core import storage
@@ -110,11 +111,23 @@ _bootstrap_admin_from_env()
 
 
 @app.get("/health")
-def health():
+def health(session=Depends(get_session)):
     settings = get_settings()
+    # A cheap DB round-trip, not just "the process is up": this endpoint
+    # doubles as an uptime-monitor keep-alive target (Render's free tier
+    # spins the container down after ~15 min idle) -- pinging it should
+    # also touch Supabase, whose free tier pauses a project after enough
+    # days of no API activity, or the container could stay warm while the
+    # database underneath it is asleep.
+    try:
+        session.execute(sql_text("SELECT 1"))
+        database_ok = True
+    except Exception:
+        database_ok = False
     return {
         "status": "ok",
         "version": app.version,
+        "database_ok": database_ok,
         "ocr_engine": settings.ocr_engine,
         "ocr_engine_available": engine_available(settings.ocr_engine),
         "gemini_api_key_configured": gemini_reader.gemini_available(),

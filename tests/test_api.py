@@ -39,7 +39,9 @@ def client():
 
 
 def test_health(client):
-    assert client.get("/health").json()["status"] == "ok"
+    body = client.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["database_ok"] is True
 
 
 def test_scan_no_auth_and_fetch(client):
